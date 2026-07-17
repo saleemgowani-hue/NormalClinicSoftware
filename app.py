@@ -1,79 +1,46 @@
 import streamlit as st
-import gspread
 import pandas as pd
-from datetime import datetime
-import os
-import json
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-st.set_page_config(page_title="Normal Child Clinic - Management Portal", layout="wide")
+# 1. Google Sheets से जुड़ने का फंक्शन
+def get_data_from_google_sheets():
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    creds = ServiceAccountCredentials.from_json_keyfile_name('secret_key.json', scope)
+    client = gspread.authorize(creds)
+    # अपनी Google Sheet का नाम यहाँ लिखें
+    sheet = client.open('Clinic_Management_Database').sheet1 
+    data = sheet.get_all_records()
+    return pd.DataFrame(data)
 
-# --- 🖼️ क्लाउड फ्रेंडली इमेज लोडर ---
-def get_image_path(filename):
-    if os.path.exists(filename):
-        return filename
-    return None
+# 2. मुख्य ऐप लेआउट
+st.set_page_config(page_title="Normal Child Clinic", layout="wide")
+st.title("🏥 Normal Child Clinic - डैशबोर्ड")
 
-banner_file = get_image_path("banner.png")
-logo_file = get_image_path("logo.png")
+try:
+    df = get_data_from_google_sheets()
 
-# --- 🎨 प्रीमियम थीम CSS ---
-st.markdown("""
-    <style>
-    .main { background-color: #f8f9fa; font-family: 'Segoe UI', sans-serif; }
-    .metric-card {
-        background-color: #ffffff; padding: 22px; border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-top: 4px solid #008080;
-        text-align: center;
-    }
-    .metric-title { color: #6c757d; font-size: 13px; font-weight: 600; text-transform: uppercase; }
-    .metric-value { color: #101010; font-size: 28px; font-weight: 700; margin-top: 5px; }
-    h1, h2, h3 { color: #0b3c4f; font-weight: 600 !important; }
-    [data-testid="stSidebar"] { background-color: #0b3c4f !important; }
-    [data-testid="stSidebar"] * { color: #ffffff !important; }
-    [data-testid="stSidebar"] input { color: #000000 !important; }
-    .stButton>button {
-        background-color: #008080 !important; color: white !important;
-        border-radius: 6px !important; padding: 8px 20px !important;
-        font-weight: 600 !important; border: none !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
+    # 3. डैशबोर्ड सेक्शन
+    st.subheader("📊 दैनिक क्लिनिक सारांश")
+    col1, col2 = st.columns(2)
+    
+    total_patients = len(df)
+    col1.metric(label="कुल मरीज़", value=total_patients)
 
-# --- 🔑 क्लाउड सुरक्षित कनेक्शन ---
-@st.cache_resource
-def connect_to_sheets():
-    try:
-        creds_dict = st.secrets["gspread"]
-        if isinstance(creds_dict, str):
-            creds_dict = json.loads(creds_dict)
-        gc = gspread.service_account_from_dict(creds_dict)
-        sh = gc.open("Clinic_Management_Database")
-        return sh, None
-    except Exception as e:
-        return None, str(e)
+    # 4. ग्राफ और विज़ुअलाइज़ेशन
+    if 'Diagnosis' in df.columns:
+        diagnosis_counts = df['Diagnosis'].value_counts()
+        st.write("### मरीज़ों की समस्याओं का वितरण")
+        st.bar_chart(diagnosis_counts)
 
-sh, raw_error = connect_to_sheets()
+    # 5. डेटा टेबल (एक्सेस कंट्रोल)
+    if st.checkbox("मरीज़ों की पूरी सूची देखें"):
+        st.dataframe(df)
 
-if sh is None:
-    st.error(f"❌ Google Sheet से कनेक्शन नहीं हो पाया: {raw_error}")
-    st.stop()
+except Exception as e:
+    st.error(f"डेटा लोड करने में त्रुटि: {e}")
+    st.info("सुनिश्चित करें कि 'secret_key.json' फाइल सही जगह पर है और आपके पास एक्सेस है।")
 
-# --- 🔒 क्लाउड डेटा लोडर ---
-@st.cache_data(ttl=5)
-def load_cloud_data_fast(sheet_name):
-    try:
-        worksheet = sh.worksheet(sheet_name)
-        all_rows = worksheet.get_all_values()
-        if not all_rows or len(all_rows) < 1: return pd.DataFrame()
-        headers = [str(h).strip() for h in all_rows[0]]
-        df = pd.DataFrame(all_rows[1:], columns=headers)
-        if sheet_name == "Attendance" and "Staff ID" in df.columns: df = df.rename(columns={"Staff ID": "Staff_ID"})
-        return df
-    except: return pd.DataFrame()
-
-# --- (बाकी के आपके सभी फंक्शन्स: sync_total_fees_batch, sync_daily_collection_to_sheet, आदि यहाँ जोड़ें) ---
-# --- (नोट: कोड की लंबाई के कारण मैंने केवल मुख्य कनेक्शन वाले हिस्से अपडेट किए हैं) ---
-
-# [यहाँ से आप अपना वही पुराना logic (Dashboard, HR, Attendance आदि) वाला कोड पेस्ट कर सकते हैं]
-
-st.info("✅ ऐप सफलतापूर्वक कनेक्ट हो गया है। अपना बाकी लॉजिक यहाँ जोड़ें।")
+# 6. क्लिनिक स्टाफ SOP रिफरेंस (Optional)
+with st.expander("ℹ️ स्टाफ SOP निर्देश देखें"):
+    st.write("रिसेप्शनिस्ट, डॉक्टर और फार्मेसी स्टाफ के लिए मानक प्रक्रियाओं का पालन करें[cite: 2]।")
