@@ -1,18 +1,20 @@
 import streamlit as st
 import gspread
 import pandas as pd
-from datetime import datetime
-import os
 
-# --- ⚙️ कॉन्फ़िगरेशन ---
-st.set_page_config(page_title="Normal Child Clinic - Management Portal", layout="wide")
+# --- 🎨 पेज कॉन्फ़िगरेशन ---
+st.set_page_config(page_title="Normal Child Clinic", layout="wide")
 
-# --- 🔒 Google Sheets सुरक्षित कनेक्शन (Streamlit Cloud के लिए अपडेटेड) ---
+# --- 🔑 क्लाउड सुरक्षित कनेक्शन ---
 @st.cache_resource
 def connect_to_sheets():
     try:
-        # Streamlit secrets.toml से क्रेडेंशियल्स लोड करना
-        creds_dict = st.secrets["gcp_service_account"]
+        # यहाँ 'gspread' का उपयोग किया गया है जो आपके Secrets में सेव है
+        creds_dict = dict(st.secrets["gspread"])
+        
+        if 'private_key' in creds_dict:
+            creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
+            
         gc = gspread.service_account_from_dict(creds_dict)
         sh = gc.open("Clinic_Management_Database")
         return sh, None
@@ -22,68 +24,69 @@ def connect_to_sheets():
 sh, raw_error = connect_to_sheets()
 
 if sh is None:
-    st.error(f"❌ Google Sheet से कनेक्शन नहीं हो पाया! कृपया Secret Settings चेक करें। एरर: {raw_error}")
+    st.error(f"❌ कनेक्शन एरर: {raw_error}")
     st.stop()
 
-# (बाकी सारा कोड आपका पुराना ही है, बस ऊपर वाले फंक्शन को यहाँ बदल दिया गया है)
+# --- 🔐 सेशन स्टेट ---
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+if 'user_role' not in st.session_state:
+    st.session_state['user_role'] = ""
 
-# --- 🔍 इमेज स्कैनर (अगर इमेज फोल्डर में है) ---
-def find_clinic_image(keyword):
-    search_paths = [os.path.dirname(os.path.abspath(__file__)), os.getcwd()]
-    for path in search_paths:
-        if os.path.exists(path):
-            try:
-                for file in os.listdir(path):
-                    if keyword.lower() in file.lower() and file.lower().endswith(('.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG')):
-                        return os.path.join(path, file)
-            except: pass
-    return None
+# --- 🛡️ पासवर्ड सेटिंग्स ---
+PASSWORDS = {
+    "Admin": "admin123",
+    "Doctor": "doctor123",
+    "Staff": "staff123"
+}
 
-banner_file = find_clinic_image("banner")
-logo_file = find_clinic_image("logo")
+# --- 1️⃣ लॉगिन पेज ---
+def show_login_page():
+    st.markdown("<h1 style='text-align: center;'>🏥 Normal Child Clinic</h1>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            role = st.selectbox("रोल चुनें:", ["Admin", "Doctor", "Staff"])
+            password = st.text_input("पासवर्ड:", type="password")
+            submit = st.form_submit_button("Login")
+            if submit:
+                if PASSWORDS.get(role) == password:
+                    st.session_state['logged_in'] = True
+                    st.session_state['user_role'] = role
+                    st.rerun()
+                else:
+                    st.error("❌ गलत पासवर्ड!")
 
-# --- 🎨 प्रीमियम थीम CSS ---
-st.markdown("""
-    <style>
-    .main { background-color: #f8f9fa; font-family: 'Segoe UI', sans-serif; }
-    .metric-card {
-        background-color: #ffffff; padding: 22px; border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-top: 4px solid #008080;
-        text-align: center;
-    }
-    .metric-title { color: #6c757d; font-size: 13px; font-weight: 600; text-transform: uppercase; }
-    .metric-value { color: #101010; font-size: 28px; font-weight: 700; margin-top: 5px; }
-    h1, h2, h3 { color: #0b3c4f; font-weight: 600 !important; }
-    [data-testid="stSidebar"] { background-color: #0b3c4f !important; }
-    [data-testid="stSidebar"] * { color: #ffffff !important; }
-    [data-testid="stSidebar"] input { color: #000000 !important; }
-    .stButton>button {
-        background-color: #008080 !important; color: white !important;
-        border-radius: 6px !important; padding: 8px 20px !important;
-        font-weight: 600 !important; border: none !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# --- 2️⃣ डैशबोर्ड और मेनू ---
+def show_dashboard():
+    st.sidebar.title(f"👤 {st.session_state['user_role']} Panel")
+    menu = st.sidebar.radio("मेनू चुनें:", ["📊 डैशबोर्ड (Data)", "➕ नया एंट्री जोड़ें"])
+    
+    if st.sidebar.button("Logout 🚪"):
+        st.session_state['logged_in'] = False
+        st.rerun()
 
-# (यहाँ से आगे आपका बाकी पूरा कोड वैसा ही रखें जैसा आपके कंप्यूटर में था, 
-# बस 'load_cloud_data_fast' और अन्य फंक्शन्स को नीचे पेस्ट करें)
+    if menu == "📊 डैशबोर्ड (Data)":
+        st.title("📊 क्लिनिक डैशबोर्ड")
+        data = sh.sheet1.get_all_records()
+        if data:
+            st.dataframe(pd.DataFrame(data), use_container_width=True)
+        else:
+            st.info("डेटा उपलब्ध नहीं है।")
 
-# --- 🔒 क्लाउड डेटा लोडर ---
-@st.cache_data(ttl=5)
-def load_cloud_data_fast(sheet_name):
-    try:
-        worksheet = sh.worksheet(sheet_name)
-        all_rows = worksheet.get_all_values()
-        if not all_rows or len(all_rows) < 1: return pd.DataFrame()
-        headers = [str(h).strip() for h in all_rows[0]]
-        df = pd.DataFrame(all_rows[1:], columns=headers)
-        if sheet_name == "Attendance" and "Staff ID" in df.columns: df = df.rename(columns={"Staff ID": "Staff_ID"})
-        if sheet_name == "Patients":
-            for col in ['Fees', 'Total Fees']:
-                if col in df.columns:
-                    df[col] = df[col].astype(str).str.replace('₹', '', regex=False).str.replace('/-', '', regex=False).str.replace(',', '', regex=False).str.strip()
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-        return df
-    except: return pd.DataFrame()
+    elif menu == "➕ नया एंट्री जोड़ें":
+        st.title("➕ नया डेटा जोड़ें")
+        with st.form("add_form"):
+            name = st.text_input("नाम:")
+            role_entry = st.text_input("रोल/विवरण:")
+            mobile = st.text_input("मोबाइल:")
+            submit = st.form_submit_button("सेव करें")
+            if submit:
+                sh.sheet1.append_row([name, role_entry, mobile])
+                st.success("✅ डेटा सेव हो गया!")
 
-# [नोट: यहाँ अपना बाकी सारा फंक्शन logic नीचे पेस्ट करें...]
+# --- ⚙️ मुख्य लॉजिक ---
+if not st.session_state['logged_in']:
+    show_login_page()
+else:
+    show_dashboard()
