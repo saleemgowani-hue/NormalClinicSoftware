@@ -4,17 +4,21 @@ import pandas as pd
 import os
 
 # --- 🎨 पेज कॉन्फ़िगरेशन ---
-st.set_page_config(page_title="Normal Child Clinic - Management Portal", layout="wide")
+st.set_page_config(page_title="Normal Child Clinic", layout="wide")
 
-# --- 🔑 क्लाउड सुरक्षित कनेक्शन (Streamlit Secrets का उपयोग) ---
+# --- 🔑 क्लाउड सुरक्षित कनेक्शन ---
 @st.cache_resource
 def connect_to_sheets():
     try:
-        # Streamlit के Secrets से 'gspread' क्रेडेंशियल्स लोड करना
-        creds_dict = st.secrets["gspread"]
-        # सर्विस अकाउंट के जरिए Google Sheets से जुड़ना
+        # Streamlit के Secrets से क्रेडेंशियल्स लेना
+        creds_dict = dict(st.secrets["gspread"])
+        
+        # यह लाइन PEM फाइल एरर को ठीक करने के लिए बहुत ज़रूरी है
+        if 'private_key' in creds_dict:
+            creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
+            
+        # Google Sheet से जुड़ना
         gc = gspread.service_account_from_dict(creds_dict)
-        # अपनी Google Sheet का नाम यहाँ सही लिखें
         sh = gc.open("Clinic_Management_Database")
         return sh, None
     except Exception as e:
@@ -24,32 +28,16 @@ def connect_to_sheets():
 sh, raw_error = connect_to_sheets()
 
 if sh is None:
-    st.error(f"❌ Google Sheet से कनेक्शन नहीं हो पाया! कृपया Secrets चेक करें. एरर: {raw_error}")
+    st.error(f"❌ कनेक्शन एरर: {raw_error}")
+    st.info("कृपया सुनिश्चित करें कि Secrets में private_key सही तरीके से पेस्ट की गई है।")
     st.stop()
 
-# --- 🎨 प्रीमियम थीम CSS ---
-st.markdown("""
-    <style>
-    .main { background-color: #f8f9fa; font-family: 'Segoe UI', sans-serif; }
-    h1, h2, h3 { color: #0b3c4f; font-weight: 600 !important; }
-    [data-testid="stSidebar"] { background-color: #0b3c4f !important; }
-    [data-testid="stSidebar"] * { color: #ffffff !important; }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- 🔑 पासवर्ड मैनेजर ---
-@st.cache_data(ttl=5)
-def get_live_passwords():
-    try:
-        return {r['Center']: str(r['Password']) for r in sh.worksheet("Passwords").get_all_records() if r['Center']}
-    except:
-        return {"Raipur": "raipur@123", "HR_Admin": "admin@hr"}
-
-PASSWORDS = get_live_passwords()
-
-# --- ऐप इंटरफेस ---
-st.sidebar.markdown("<h3 style='text-align: center; color: white;'>🔒 CONTROL PANEL</h3>", unsafe_allow_html=True)
-
-# यहाँ अपना बाकी का प्रोजेक्ट कोड जोड़ें जो आप पहले उपयोग कर रहे थे...
+# --- 🎨 बेसिक UI ---
 st.title("Normal Child Clinic Management")
-st.write("सफलतापूर्वक कनेक्टेड! अब आप अपना डैशबोर्ड यहाँ देख सकते हैं।")
+st.success("✅ Google Sheets से सफलतापूर्वक कनेक्ट हो गया है!")
+
+# --- यहाँ अपना बाकी का प्रोजेक्ट कोड जोड़ें ---
+# उदाहरण के लिए:
+# data = sh.worksheet("Sheet1").get_all_records()
+# df = pd.DataFrame(data)
+# st.write(df)
