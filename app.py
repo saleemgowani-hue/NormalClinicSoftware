@@ -37,7 +37,7 @@ st.markdown("""
     h1, h2, h3 { color: #0b3c4f; font-weight: 600 !important; }
     [data-testid="stSidebar"] { background-color: #0b3c4f !important; }
     [data-testid="stSidebar"] * { color: #ffffff !important; }
-    [data-testid="stSidebar"] input { color: #000000 !important; }
+    [data-testid="stSidebar"] input { color: #ffffff !important; background-color: #0b3c4f !important; }
     .stButton>button {
         background-color: #008080 !important; color: white !important;
         border-radius: 6px !important; padding: 8px 20px !important;
@@ -50,26 +50,19 @@ st.markdown("""
 @st.cache_resource
 def connect_to_sheets():
     try:
-
         if "gcp_service_account" in st.secrets:
-
             gc = gspread.service_account_from_dict(
                 dict(st.secrets["gcp_service_account"])
             )
-
         else:
-
             gc = gspread.service_account(
                 filename="secret_key.json"
             )
-
         sh = gc.open("Clinic_Management_Database")
         return sh, None
-
     except Exception as e:
         return None, str(e)
     
-
 sh, raw_error = connect_to_sheets()
 
 if sh is None:
@@ -464,7 +457,7 @@ if st.session_state['logged_in']:
                     st.write("---")
                     cols_to_show = [c for c in ['ID', 'Child Name', 'Parent Name', 'Age', 'Condition', 'Mobile', 'Date', 'Fees', 'Total Fees', 'Center', 'Patient Type'] if c in filtered_df.columns]
                     if not filtered_df.empty: st.dataframe(filtered_df[cols_to_show].reset_index(drop=True), use_container_width=True)
-                    else: st.info("💡 चयनित क्राइटेरिया के लिए कोई मरीज रिकॉर्ड मौजूद नहीं है।")
+                    else: st.info("💡 चयनित क्राइटेरिया के लिए कोई मरीज रिकॉर्ड मौजूद नहीं है。")
                 else: st.info("💡 इस व्यू मोड पर कोई डेटा नहीं मिला।")
             else: st.error("❌ डेटाबेस लोड करने में समस्या आ रही है।")
         with tab_report2:
