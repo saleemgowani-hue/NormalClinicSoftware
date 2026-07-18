@@ -49,7 +49,6 @@ st.markdown("""
 # Google Sheets सुरक्षित कनेक्शन
 @st.cache_resource
 def @st.cache_resource
-def @st.cache_resource
 def connect_to_sheets():
     try:
 
