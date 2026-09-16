@@ -7,6 +7,10 @@ import json
 import hashlib
 import hmac
 import secrets
+import logging
+
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger("clinic_app")
 
 # --- 🔐 पासवर्ड हैशिंग हेल्पर्स ---
 def hash_password(password):
@@ -120,7 +124,8 @@ def load_cloud_data_fast(sheet_name):
                 df['Total Fees'] = df['Total Fees'].astype(str).str.replace('₹', '', regex=False).str.replace('/-', '', regex=False).str.replace(',', '', regex=False).str.strip()
                 df['Total Fees'] = pd.to_numeric(df['Total Fees'], errors='coerce').fillna(0).astype(int)
         return df
-    except:
+    except Exception as e:
+        logger.warning(f"load_cloud_data_fast('{sheet_name}') failed: {e}")
         return pd.DataFrame()
 
 # --- ⚡ सुपरफास्ट बैच फीस सिंक ---
@@ -154,8 +159,8 @@ def sync_total_fees_batch(sh, target_date, center_name):
                 val = int(total_fees_day) if r == target_r else ""
                 updates.append({'range': f'J{r}', 'values': [[val]]})
             p_sheet.batch_update(updates)
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"sync_total_fees_batch failed for {center_name}/{target_date}: {e}")
 
 # --- 📈 डेली समरी सिंक ---
 def sync_daily_collection_to_sheet(sh, date_str, center_name):
@@ -180,8 +185,8 @@ def sync_daily_collection_to_sheet(sh, date_str, center_name):
                 break
         if row_idx: summary_sheet.update_cell(row_idx, 3, int(total_coll))
         else: summary_sheet.append_row([str(date_str), str(center_name), int(total_coll)])
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"sync_daily_collection_to_sheet failed for {center_name}/{date_str}: {e}")
 
 # --- 👥 स्टाफ मंथली रिपोर्ट सिंक ---
 def sync_monthly_attendance_to_sheet(sh, summary_df, month_year, center_filter):
@@ -215,6 +220,7 @@ def sync_monthly_attendance_to_sheet(sh, summary_df, month_year, center_filter):
         m_sheet.update(range_name=f"A1:H{len(rows_to_keep)}", values=rows_to_keep)
         return True
     except Exception as e:
+        logger.warning(f"sync_monthly_attendance_to_sheet failed for {month_year}/{center_filter}: {e}")
         return False
 
 # --- 🔑 लाइव पासवर्ड मैनेजर ---
@@ -320,7 +326,7 @@ if st.session_state['logged_in']:
     else:
         admin_view = selected_center
 
-    menu_options = ["🏠 डैशबोर्ड (Dashboard)", "👥 स्टाफ मैनेजमेंट (HR & Staff)", "📅 दैनिक हाजिरी (Attendance)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "📊 रिपोर्ट中心 (Advanced Reports)"]
+    menu_options = ["🏠 डैशबोर्ड (Dashboard)", "👥 स्टाफ मैनेजमेंट (HR & Staff)", "📅 दैनिक हाजिरी (Attendance)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "📊 रिपोर्ट सेंटर (Advanced Reports)"]
     if selected_center == "HR_Admin": menu_options.append("🔑 पासवर्ड व क्लिनिक मैनेजर")
     menu = st.sidebar.radio("🧭 मेनू नेविगेशन:", menu_options)
     
@@ -374,7 +380,12 @@ if st.session_state['logged_in']:
                 s_salary = st.number_input("💵 मासिक सैलरी (₹):", min_value=0, value=0, step=1000)
             if st.button("🚀 क्लाउड पर सेव करें"):
                 if s_name and s_mobile:
-                    sh.worksheet("Staff").append_row([len(staff_df) + 1, s_name, s_role, str(s_mobile), s_target_center, int(s_salary)])
+                    if not staff_df.empty and 'ID' in staff_df.columns:
+                        existing_s_ids = pd.to_numeric(staff_df['ID'], errors='coerce').dropna()
+                        next_s_id = int(existing_s_ids.max()) + 1 if not existing_s_ids.empty else 1
+                    else:
+                        next_s_id = 1
+                    sh.worksheet("Staff").append_row([next_s_id, s_name, s_role, str(s_mobile), s_target_center, int(s_salary)])
                     st.cache_data.clear()
                     st.success(f"🎉 {s_name} को सफलतापूर्वक {s_target_center} सेंटर में जोड़ दिया गया है!")
                     st.rerun()
@@ -399,16 +410,28 @@ if st.session_state['logged_in']:
         if center_staff.empty:
             st.warning(f"⚠️ {att_center} सेंटर पर कोई स्टाफ उपलब्ध नहीं है।")
         else:
+            att_today_df = load_cloud_data_fast("Attendance")
+            existing_status = {}
+            if not att_today_df.empty and 'Staff_ID' in att_today_df.columns and 'Date' in att_today_df.columns:
+                today_att = att_today_df[att_today_df['Date'].astype(str).str.strip() == str(today_date)]
+                for _, r in today_att.iterrows():
+                    existing_status[str(r['Staff_ID']).strip()] = r['Status']
+
+            status_options = ["Present", "Absent", "Leave"]
             attendance_dict = {}
             for index, row in center_staff.iterrows():
                 col_s, col_a = st.columns([2, 1])
                 col_s.markdown(f"<p style='font-size: 15px; margin-top:5px;'>👤 <b>{row['Name']}</b> ({row['Role']})</p>", unsafe_allow_html=True)
-                status = col_a.radio(f"Status for {row['Name']}", ["Present", "Absent", "Leave"], key=str(row['ID']), label_visibility="collapsed", horizontal=True)
+                default_status = existing_status.get(str(row['ID']).strip(), "Present")
+                default_index = status_options.index(default_status) if default_status in status_options else 0
+                status = col_a.radio(f"Status for {row['Name']}", status_options, index=default_index, key=str(row['ID']), label_visibility="collapsed", horizontal=True)
                 attendance_dict[row['ID']] = {"name": row['Name'], "status": status}
             if st.button("💾 अटेंडेंस LOCK और सबमिट करें"):
                 try:
                     att_sheet = sh.worksheet("Attendance")
                     all_rows = att_sheet.get_all_values()
+                    existing_ids = [int(r[0]) for r in all_rows[1:] if r and str(r[0]).strip().isdigit()]
+                    next_id_counter = max(existing_ids) + 1 if existing_ids else 1
                     for s_id, info in attendance_dict.items():
                         existing_row_idx = None
                         for r_idx, row in enumerate(all_rows[1:], start=2):
@@ -420,7 +443,8 @@ if st.session_state['logged_in']:
                             att_sheet.update_cell(existing_row_idx, 5, info['status'])
                             att_sheet.update_cell(existing_row_idx, 6, att_center)
                         else:
-                            next_id = len(all_rows)
+                            next_id = next_id_counter
+                            next_id_counter += 1
                             att_sheet.append_row([next_id, int(s_id), info['name'], today_date, info['status'], att_center])
                             all_rows.append([next_id, int(s_id), info['name'], today_date, info['status'], att_center])
                     st.cache_data.clear()
@@ -456,7 +480,8 @@ if st.session_state['logged_in']:
                 if c_name and p_name and p_mobile:
                     p_sheet = sh.worksheet("Patients")
                     all_p_rows = p_sheet.get_all_values()
-                    next_p_id = len(all_p_rows)
+                    existing_p_ids = [int(r[0]) for r in all_p_rows[1:] if r and str(r[0]).strip().isdigit()]
+                    next_p_id = max(existing_p_ids) + 1 if existing_p_ids else 1
                     p_sheet.append_row([next_p_id, c_name, p_name, int(c_age), c_cond, str(p_mobile), p_target_center, today_date, int(c_fees), "", p_type])
                     sync_total_fees_batch(sh, today_date, p_target_center)
                     sync_daily_collection_to_sheet(sh, today_date, p_target_center)
@@ -477,7 +502,9 @@ if st.session_state['logged_in']:
                     edit_p_type = st.selectbox("मरीज का प्रकार बदलें:", ["New Patient (नया)", "Old Patient (पुराना)"], index=0 if 'Patient Type' not in pat_data or pat_data['Patient Type'] == 'New Patient (नया)' else 1)
                 with col_e2:
                     edit_c_age = st.number_input("उम्र बदलें:", min_value=1, max_value=18, value=int(pat_data['Age']))
-                    edit_c_cond = st.selectbox("समस्या बदलें:", ["Autism (ऑटिज़्म)", "ADHD", "Cerebral Palsy", "Delayed Speech", "Other"])
+                    cond_options = ["Autism (ऑटिज़्म)", "ADHD", "Cerebral Palsy", "Delayed Speech", "Other"]
+                    current_cond = pat_data['Condition'] if 'Condition' in pat_data else None
+                    edit_c_cond = st.selectbox("समस्या बदलें:", cond_options, index=cond_options.index(current_cond) if current_cond in cond_options else 0)
                     edit_c_fees = st.number_input("फीस राशि बदलें (₹):", min_value=0, value=int(pat_data['Fees']) if 'Fees' in pat_data else 0, step=100)
                 if st.button("💾 मरीज डेटा अपडेट करें"):
                     p_sheet = sh.worksheet("Patients")
@@ -491,7 +518,7 @@ if st.session_state['logged_in']:
                     st.success("📝 रिकॉर्ड सफलतापूर्वक बैच मोड में अपडेटेड!")
                     st.rerun()
 
-    elif menu == "📊 रिपोर्ट中心 (Advanced Reports)":
+    elif menu == "📊 रिपोर्ट सेंटर (Advanced Reports)":
         st.markdown("<h2>📊 क्लिनिक एडवांस्ड रिपोर्ट पैनल</h2>", unsafe_allow_html=True)
         tab_report1, tab_report2 = st.tabs(["🧒 मरीज एवं कलेक्शन रिपोर्ट", "👥 स्टाफ मासिक अटेंडेंस रिपोर्ट"])
         with tab_report1:
@@ -527,7 +554,7 @@ if st.session_state['logged_in']:
                     st.write("---")
                     cols_to_show = [c for c in ['ID', 'Child Name', 'Parent Name', 'Age', 'Condition', 'Mobile', 'Date', 'Fees', 'Total Fees', 'Center', 'Patient Type'] if c in filtered_df.columns]
                     if not filtered_df.empty: st.dataframe(filtered_df[cols_to_show].reset_index(drop=True), use_container_width=True)
-                    else: st.info("💡 चयनित क्राइटेरिया के लिए कोई मरीज रिकॉर्ड मौजूद नहीं है。")
+                    else: st.info("💡 चयनित क्राइटेरिया के लिए कोई मरीज रिकॉर्ड मौजूद नहीं है।")
                 else: st.info("💡 इस व्यू मोड पर कोई डेटा नहीं मिला।")
             else: st.error("❌ डेटाबेस लोड करने में समस्या आ रही है।")
         with tab_report2:
@@ -536,12 +563,15 @@ if st.session_state['logged_in']:
             att_data_df = load_cloud_data_fast("Attendance")
             
             if 'Staff_ID' not in att_data_df.columns:
-                st.error("⚠️ अटेंडेंस शीट में 'Staff_ID' कॉलम नहीं मिल रहा। कृपया अपनी Google Sheet में हेडर चेक करें。")
+                st.error("⚠️ अटेंडेंस शीट में 'Staff_ID' कॉलम नहीं मिल रहा। कृपया अपनी Google Sheet में हेडर चेक करें।")
             elif staff_data_df.empty or att_data_df.empty:
                 st.info("💡 अभी सिस्टम में स्टाफ या अटेंडेंस का कोई रिकॉर्ड उपलब्ध नहीं है।")
             else:
                 col_y1, col_y2 = st.columns(2)
-                with col_y1: selected_year = st.selectbox("📅 साल चुनें:", ["2026", "2025", "2027"], index=0)
+                with col_y1:
+                    current_year = datetime.today().year
+                    year_options = [str(y) for y in range(current_year - 2, current_year + 2)]
+                    selected_year = st.selectbox("📅 साल चुनें:", year_options, index=year_options.index(str(current_year)))
                 with col_y2:
                     months_list = [("January", "01"), ("February", "02"), ("March", "03"), ("April", "04"), ("May", "05"), ("June", "06"), ("July", "07"), ("August", "08"), ("September", "09"), ("October", "10"), ("November", "11"), ("December", "12")]
                     selected_month_label = st.selectbox("📆 महीना चुनें:", [m[0] for m in months_list], index=int(datetime.today().month)-1)
@@ -610,11 +640,18 @@ if st.session_state['logged_in']:
             st.subheader("🗑️ सेंटर हटाएं")
             del_center = st.selectbox("हटाने के लिए सेंटर चुनें:", actual_centers)
             if st.button("❌ सेंटर डिलीट करें"):
-                row_idx = next((idx + 2 for idx, r in enumerate(p_records) if r['Center'] == del_center), None)
-                if row_idx:
-                    pwd_sheet.delete_rows(row_idx)
-                    st.cache_data.clear()
-                    st.success(f"🗑️ सेंटर '{del_center}' हटा दिया गया है!")
-                    st.rerun()
+                staff_check_df = load_cloud_data_fast("Staff")
+                patients_check_df = load_cloud_data_fast("Patients")
+                staff_count = len(staff_check_df[staff_check_df['Center'] == del_center]) if not staff_check_df.empty and 'Center' in staff_check_df.columns else 0
+                patient_count = len(patients_check_df[patients_check_df['Center'] == del_center]) if not patients_check_df.empty and 'Center' in patients_check_df.columns else 0
+                if staff_count > 0 or patient_count > 0:
+                    st.error(f"⚠️ '{del_center}' सेंटर डिलीट नहीं किया जा सकता — इसमें अभी भी {staff_count} स्टाफ और {patient_count} मरीज रिकॉर्ड मौजूद हैं। पहले उन्हें किसी दूसरे सेंटर में ट्रांसफर करें।")
+                else:
+                    row_idx = next((idx + 2 for idx, r in enumerate(p_records) if r['Center'] == del_center), None)
+                    if row_idx:
+                        pwd_sheet.delete_rows(row_idx)
+                        st.cache_data.clear()
+                        st.success(f"🗑️ सेंटर '{del_center}' हटा दिया गया है!")
+                        st.rerun()
 else:
     st.info("🔒 कृपया डेटा एक्सेस करने के लिए पासवर्ड डालकर 'Login' बटन पर क्लिक करें।")
