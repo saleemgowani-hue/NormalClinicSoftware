@@ -607,17 +607,17 @@ live_centers = list(PASSWORDS.keys())
 actual_centers = [c for c in live_centers if c != "HR_Admin"]
 actual_centers.sort()
 
-login_mode = st.sidebar.radio("🔀 लॉगिन तरीका:", ["🏢 सेंटर लॉगिन", "👤 स्टाफ लॉगिन (Individual)"], key="login_mode_choice", horizontal=True)
+login_mode = st.sidebar.radio("🔀 लॉगिन तरीका (Login Mode):", ["🏢 सेंटर लॉगिन (Center Login)", "👤 स्टाफ लॉगिन (Staff Login - Individual)"], key="login_mode_choice", horizontal=True)
 
-if login_mode == "🏢 सेंटर लॉगिन":
+if login_mode == "🏢 सेंटर लॉगिन (Center Login)":
     login_options = actual_centers + ["HR_Admin"]
     selected_center = st.sidebar.selectbox("🎯 सेंटर का चयन करें (Center):", login_options)
-    input_password = st.sidebar.text_input(f"🔑 {selected_center} का पासवर्ड डालें:", type="password")
+    input_password = st.sidebar.text_input(f"🔑 {selected_center} का पासवर्ड डालें (Enter Password):", type="password")
     current_identity = f"center:{selected_center}"
 else:
     selected_center = None
-    staff_username = st.sidebar.text_input("👤 यूज़रनेम:", key="staff_username_input")
-    staff_password = st.sidebar.text_input("🔑 पासवर्ड:", type="password", key="staff_password_input")
+    staff_username = st.sidebar.text_input("👤 यूज़रनेम (Username):", key="staff_username_input")
+    staff_password = st.sidebar.text_input("🔑 पासवर्ड (Password):", type="password", key="staff_password_input")
     current_identity = f"staff:{staff_username.strip().lower()}"
 
 if 'logged_in' not in st.session_state:
@@ -676,11 +676,11 @@ locked_out = st.session_state['lockout_until'] and now < st.session_state['locko
 
 if locked_out:
     remaining = int((st.session_state['lockout_until'] - now).total_seconds())
-    st.sidebar.error(f"🔒 बहुत ज़्यादा गलत प्रयास। कृपया {remaining} सेकंड बाद कोशिश करें।")
+    st.sidebar.error(f"🔒 बहुत ज़्यादा गलत प्रयास। कृपया {remaining} सेकंड बाद कोशिश करें। (Too many failed attempts. Try again in {remaining}s.)")
 elif st.sidebar.button("🚀 Login"):
     login_success = False
     requires_totp = False
-    if login_mode == "🏢 सेंटर लॉगिन":
+    if login_mode == "🏢 सेंटर लॉगिन (Center Login)":
         if _check_and_migrate(selected_center, input_password) or _check_and_migrate("HR_Admin", input_password):
             if selected_center == "HR_Admin":
                 admin_totp_secret = get_totp_secret("HR_Admin")
@@ -713,14 +713,14 @@ elif st.sidebar.button("🚀 Login"):
         st.session_state['login_attempts'] += 1
         if st.session_state['login_attempts'] >= MAX_LOGIN_ATTEMPTS:
             st.session_state['lockout_until'] = now + timedelta(minutes=LOCKOUT_MINUTES)
-            st.sidebar.error(f"🔒 {MAX_LOGIN_ATTEMPTS} गलत प्रयासों के बाद लॉगिन {LOCKOUT_MINUTES} मिनट के लिए लॉक हो गया।")
+            st.sidebar.error(f"🔒 {MAX_LOGIN_ATTEMPTS} गलत प्रयासों के बाद लॉगिन {LOCKOUT_MINUTES} मिनट के लिए लॉक हो गया। (Login locked for {LOCKOUT_MINUTES} min after {MAX_LOGIN_ATTEMPTS} failed attempts.)")
         else:
             left = MAX_LOGIN_ATTEMPTS - st.session_state['login_attempts']
-            st.sidebar.error(f"❌ गलत यूज़रनेम/पासवर्ड! ({left} प्रयास शेष)")
+            st.sidebar.error(f"❌ गलत यूज़रनेम/पासवर्ड! ({left} प्रयास शेष) (Wrong username/password! {left} attempts left)")
 
 if st.session_state.get('awaiting_totp') and not st.session_state.get('logged_in'):
-    otp_code = st.sidebar.text_input("🔐 Authenticator ऐप का 6-अंकों कोड डालें:", max_chars=6, key="totp_code_input")
-    if st.sidebar.button("✅ OTP वेरिफाई करें"):
+    otp_code = st.sidebar.text_input("🔐 Authenticator ऐप का 6-अंकों कोड डालें (Enter 6-digit code):", max_chars=6, key="totp_code_input")
+    if st.sidebar.button("✅ OTP वेरिफाई करें (Verify OTP)"):
         totp_obj = pyotp.TOTP(st.session_state.get('pending_totp_secret', ''))
         if otp_code and totp_obj.verify(otp_code, valid_window=1):
             st.session_state['logged_in'] = True
@@ -729,7 +729,7 @@ if st.session_state.get('awaiting_totp') and not st.session_state.get('logged_in
             st.session_state['lockout_until'] = None
             st.rerun()
         else:
-            st.sidebar.error("❌ गलत OTP कोड!")
+            st.sidebar.error("❌ गलत OTP कोड! (Invalid OTP Code!)")
 
 if st.session_state.get('logged_in') and st.session_state.get('login_mode') == 'staff' and st.session_state.get('staff_user'):
     selected_center = st.session_state['staff_user']['Center']
@@ -738,9 +738,9 @@ today_date = datetime.today().strftime('%Y-%m-%d')
 
 if st.session_state['logged_in']:
     if st.session_state.get('login_mode') == 'staff' and st.session_state.get('staff_user'):
-        st.sidebar.success(f"🔓 स्वागत है, {st.session_state['staff_user']['Full Name']} ({st.session_state['staff_user']['Role']})")
+        st.sidebar.success(f"🔓 स्वागत है (Welcome), {st.session_state['staff_user']['Full Name']} ({st.session_state['staff_user']['Role']})")
     else:
-        st.sidebar.success("🔓 एक्सेस स्वीकृत")
+        st.sidebar.success("🔓 एक्सेस स्वीकृत (Access Granted)")
     if st.sidebar.button("🚪 Logout"):
         st.session_state['logged_in'] = False
         st.session_state['staff_user'] = None
@@ -755,19 +755,19 @@ if st.session_state['logged_in']:
         admin_view = selected_center
 
     menu_options = ["🏠 डैशबोर्ड (Dashboard)", "👥 स्टाफ मैनेजमेंट (HR & Staff)", "📅 दैनिक हाजिरी (Attendance)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "🩺 परामर्श (Consultation)", "📊 रिपोर्ट सेंटर (Advanced Reports)", "💰 फाइनेंस (Finance)", "🎫 अपॉइंटमेंट (Appointments)"]
-    if selected_center == "HR_Admin": menu_options.append("🔑 पासवर्ड व क्लिनिक मैनेजर")
+    if selected_center == "HR_Admin": menu_options.append("🔑 पासवर्ड व क्लिनिक मैनेजर (Password & Clinic Manager)")
 
     if st.session_state.get('login_mode') == 'staff' and st.session_state.get('staff_user'):
         allowed_menus = ROLE_MENU_ACCESS.get(st.session_state['staff_user']['Role'])
         if allowed_menus:
             menu_options = [m for m in menu_options if m in allowed_menus]
 
-    st.sidebar.markdown("<p style='margin-bottom:2px; font-weight:600; opacity:0.85;'>🧭 मेनू नेविगेशन</p>", unsafe_allow_html=True)
+    st.sidebar.markdown("<p style='margin-bottom:2px; font-weight:600; opacity:0.85;'>🧭 मेनू नेविगेशन (Menu Navigation)</p>", unsafe_allow_html=True)
     st.sidebar.markdown('<div class="menu-nav-anchor"></div>', unsafe_allow_html=True)
     menu = st.sidebar.radio("मेनू नेविगेशन", menu_options, label_visibility="collapsed")
     
     if menu == "🏠 डैशबोर्ड (Dashboard)":
-        st.markdown(f"<h2>📊 {admin_view} ओवरव्यू</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2>📊 {admin_view} ओवरव्यू (Overview)</h2>", unsafe_allow_html=True)
         sync_throttle_key = f"last_fee_sync_{admin_view}"
         last_sync_time = st.session_state.get(sync_throttle_key)
         if not last_sync_time or (datetime.now() - last_sync_time).total_seconds() > 30:
@@ -802,9 +802,9 @@ if st.session_state['logged_in']:
         total_fees_collected = (filtered_patients['Fees'].sum() if not filtered_patients.empty and 'Fees' in filtered_patients.columns else 0) + _consultation_fees_for(today_consultations)
 
         col1, col2, col3 = st.columns(3)
-        with col1: st.markdown(f'<div class="metric-card"><div class="metric-title">👥 कुल एक्टिव स्टाफ</div><div class="metric-value">{len(center_staff)}</div></div>', unsafe_allow_html=True)
-        with col2: st.markdown(f'<div class="metric-card" style="border-top-color:#ff9f43;"><div class="metric-title">🧒 आज के पंजीकृत बच्चे</div><div class="metric-value">{len(filtered_patients)}</div></div>', unsafe_allow_html=True)
-        with col3: st.markdown(f'<div class="metric-card" style="border-top-color:#28c76f;"><div class="metric-title">💵 कुल फीस कलेक्शन</div><div class="metric-value" style="color:#28c76f;">₹ {total_fees_collected}/-</div></div>', unsafe_allow_html=True)
+        with col1: st.markdown(f'<div class="metric-card"><div class="metric-title">👥 कुल एक्टिव स्टाफ (Total Active Staff)</div><div class="metric-value">{len(center_staff)}</div></div>', unsafe_allow_html=True)
+        with col2: st.markdown(f'<div class="metric-card" style="border-top-color:#ff9f43;"><div class="metric-title">🧒 आज के पंजीकृत बच्चे (Today\'s Patients)</div><div class="metric-value">{len(filtered_patients)}</div></div>', unsafe_allow_html=True)
+        with col3: st.markdown(f'<div class="metric-card" style="border-top-color:#28c76f;"><div class="metric-title">💵 कुल फीस कलेक्शन (Total Collection)</div><div class="metric-value" style="color:#28c76f;">₹ {total_fees_collected}/-</div></div>', unsafe_allow_html=True)
 
         # --- 📊 अतिरिक्त KPI कैलकुलेशन ---
         attendance_df = load_cloud_data_fast("Attendance")
@@ -834,12 +834,12 @@ if st.session_state['logged_in']:
 
         st.write("")
         col4, col5, col6, col7 = st.columns(4)
-        with col4: st.markdown(f'<div class="metric-card" style="border-top-color:#5f27cd;"><div class="metric-title">📆 इस महीने कलेक्शन</div><div class="metric-value" style="color:#5f27cd;">₹ {int(month_collection)}/-</div></div>', unsafe_allow_html=True)
-        with col5: st.markdown(f'<div class="metric-card" style="border-top-color:#00cec9;"><div class="metric-title">🧒 इस महीने मरीज</div><div class="metric-value">{len(month_patients_df)}</div></div>', unsafe_allow_html=True)
-        with col6: st.markdown(f'<div class="metric-card" style="border-top-color:#0984e3;"><div class="metric-title">✅ आज हाजिरी %</div><div class="metric-value">{attendance_pct}%</div></div>', unsafe_allow_html=True)
-        with col7: st.markdown(f'<div class="metric-card" style="border-top-color:#e17055;"><div class="metric-title">💰 औसत फीस/मरीज (आज)</div><div class="metric-value">₹ {int(avg_fee_today)}</div></div>', unsafe_allow_html=True)
+        with col4: st.markdown(f'<div class="metric-card" style="border-top-color:#5f27cd;"><div class="metric-title">📆 इस महीने कलेक्शन (This Month Collection)</div><div class="metric-value" style="color:#5f27cd;">₹ {int(month_collection)}/-</div></div>', unsafe_allow_html=True)
+        with col5: st.markdown(f'<div class="metric-card" style="border-top-color:#00cec9;"><div class="metric-title">🧒 इस महीने मरीज (This Month Patients)</div><div class="metric-value">{len(month_patients_df)}</div></div>', unsafe_allow_html=True)
+        with col6: st.markdown(f'<div class="metric-card" style="border-top-color:#0984e3;"><div class="metric-title">✅ आज हाजिरी % (Today Attendance %)</div><div class="metric-value">{attendance_pct}%</div></div>', unsafe_allow_html=True)
+        with col7: st.markdown(f'<div class="metric-card" style="border-top-color:#e17055;"><div class="metric-title">💰 औसत फीस/मरीज (Avg Fee/Patient - आज)</div><div class="metric-value">₹ {int(avg_fee_today)}</div></div>', unsafe_allow_html=True)
 
-        st.markdown(f"<p style='margin-top:14px;'>👥 <b>आज की हाजिरी:</b> ✅ उपस्थित {present_count} &nbsp;|&nbsp; ❌ अनुपस्थित {absent_count} &nbsp;|&nbsp; 🌴 अवकाश {leave_count}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='margin-top:14px;'>👥 <b>आज की हाजिरी (Today's Attendance):</b> ✅ उपस्थित {present_count} (Present) &nbsp;|&nbsp; ❌ अनुपस्थित {absent_count} (Absent) &nbsp;|&nbsp; 🌴 अवकाश {leave_count} (Leave)</p>", unsafe_allow_html=True)
 
         # --- 🔔 अलर्ट: कम कलेक्शन / कम हाजिरी ---
         alert_last_7_dates = [(datetime.today() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(1, 8)]
@@ -852,13 +852,13 @@ if st.session_state['logged_in']:
         recent_consult_alert_df = center_consultations_all[center_consultations_all['Date'].isin(alert_last_7_dates)] if not center_consultations_all.empty else pd.DataFrame()
         avg_recent_collection = (recent_patient_sum + _consultation_fees_for(recent_consult_alert_df)) / 7
         if datetime.now().hour >= 14 and avg_recent_collection > 0 and total_fees_collected < avg_recent_collection * 0.5:
-            st.warning(f"⚠️ आज का कलेक्शन (₹{int(total_fees_collected)}) पिछले 7 दिनों की औसत (₹{int(avg_recent_collection)}/दिन) से काफी कम है — ध्यान दें।")
+            st.warning(f"⚠️ आज का कलेक्शन (₹{int(total_fees_collected)}) पिछले 7 दिनों की औसत (₹{int(avg_recent_collection)}/दिन) से काफी कम है — ध्यान दें। (Today's collection is much lower than the 7-day average — please check.)")
         if total_marked > 0 and attendance_pct < 70:
-            st.warning(f"⚠️ आज स्टाफ हाजिरी सिर्फ {attendance_pct}% है — सामान्य से कम, कृपया जांच करें।")
+            st.warning(f"⚠️ आज स्टाफ हाजिरी सिर्फ {attendance_pct}% है — सामान्य से कम, कृपया जांच करें। (Today's staff attendance is only {attendance_pct}% — lower than normal.)")
 
         if admin_view == "सभी सेंटर्स (All Centers)" and actual_centers:
             st.write("---")
-            st.markdown("### 🏥 सेंटर-वाइज तुलना")
+            st.markdown("### 🏥 सेंटर-वाइज तुलना (Center-wise Comparison)")
             with st.container(border=True):
                 comparison_rows = []
                 for c in actual_centers:
@@ -867,19 +867,19 @@ if st.session_state['logged_in']:
                     c_today_fees = c_today_patients['Fees'].sum() if not c_today_patients.empty and 'Fees' in c_today_patients.columns else 0
                     c_today_consultations = consultations_df[(consultations_df['Center'] == c) & (consultations_df['Date'] == today_date)] if not consultations_df.empty else pd.DataFrame()
                     c_today_fees += _consultation_fees_for(c_today_consultations)
-                    comparison_rows.append({"सेंटर": c, "स्टाफ": c_staff_count, "आज के मरीज": len(c_today_patients), "आज की फीस (₹)": int(c_today_fees)})
+                    comparison_rows.append({"सेंटर (Center)": c, "स्टाफ (Staff)": c_staff_count, "आज के मरीज (Patients Today)": len(c_today_patients), "आज की फीस (Fees Today) (₹)": int(c_today_fees)})
                 st.dataframe(pd.DataFrame(comparison_rows), use_container_width=True, hide_index=True)
 
         st.write("---")
-        st.markdown(f"### 📋 आज के पंजीकृत मरीज ({today_date})")
+        st.markdown(f"### 📋 आज के पंजीकृत मरीज (Today's Registered Patients) ({today_date})")
         if not filtered_patients.empty:
             cols_to_show = [c for c in ['Child Name', 'Parent Name', 'Age', 'Condition', 'Mobile', 'Fees', 'Total Fees', 'Center', 'Patient Type'] if c in filtered_patients.columns]
             st.dataframe(filtered_patients[cols_to_show].reset_index(drop=True), use_container_width=True)
         else:
-            st.info("💡 कोई मरीज दर्ज नहीं है।")
+            st.info("💡 कोई मरीज दर्ज नहीं है। (No patients registered today.)")
 
         st.write("---")
-        st.markdown("### 📈 पिछले 7 दिनों का ट्रेंड")
+        st.markdown("### 📈 पिछले 7 दिनों का ट्रेंड (Last 7 Days Trend)")
         last_7_dates = [(datetime.today() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(6, -1, -1)]
         if not center_patients_all.empty and 'Date' in center_patients_all.columns:
             trend_source = center_patients_all[center_patients_all['Date'].isin(last_7_dates)]
@@ -897,17 +897,17 @@ if st.session_state['logged_in']:
         with st.container(border=True):
             col_t1, col_t2 = st.columns(2)
             with col_t1:
-                st.markdown("**💵 दैनिक फीस कलेक्शन**")
+                st.markdown("**💵 दैनिक फीस कलेक्शन (Daily Fee Collection)**")
                 st.line_chart(trend_fees, color="#008080")
             with col_t2:
-                st.markdown("**🧒 दैनिक मरीज पंजीकरण**")
+                st.markdown("**🧒 दैनिक मरीज पंजीकरण (Daily Patient Registrations)**")
                 st.bar_chart(trend_counts, color="#ff9f43")
 
         if not center_patients_all.empty and 'Condition' in center_patients_all.columns:
             cond_counts = center_patients_all['Condition'].value_counts().head(6)
             if not cond_counts.empty:
                 st.write("---")
-                st.markdown("### 🩺 समस्या-वार मरीज वितरण (Top Conditions)")
+                st.markdown("### 🩺 समस्या-वार मरीज वितरण (Patient Distribution by Condition / Top Conditions)")
                 with st.container(border=True):
                     st.bar_chart(cond_counts, color="#7b2cbf")
 
@@ -1621,7 +1621,7 @@ if st.session_state['logged_in']:
                 st.line_chart(comp_summary.set_index(group_col)["कुल कलेक्शन (₹)"])
                 st.bar_chart(comp_summary.set_index(group_col)["कुल मरीज"])
 
-    elif menu == "🔑 पासवर्ड व क्लिनिक मैनेजर":
+    elif menu == "🔑 पासवर्ड व क्लिनिक मैनेजर (Password & Clinic Manager)":
         st.markdown("<h2>🔑 पासवर्ड व सेंटर मैनेजमेंट</h2>", unsafe_allow_html=True)
         
         tab_pwd, tab_center, tab_users = st.tabs(["🔐 पासवर्ड मैनेजमेंट", "🏥 सेंटर मैनेजमेंट", "👤 यूज़र मैनेजमेंट (Individual Login)"])
