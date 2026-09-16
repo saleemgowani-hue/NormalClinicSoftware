@@ -158,9 +158,9 @@ def build_whatsapp_url(mobile, message):
     return f"https://wa.me/{number}?text={urllib.parse.quote(message)}"
 
 def render_whatsapp_sender(data, key_prefix):
-    st.markdown("**📲 WhatsApp मैसेज भेजें**")
+    st.markdown("**📲 WhatsApp मैसेज भेजें (Send WhatsApp Message)**")
     template_choice = st.selectbox(
-        "टेम्पलेट चुनें:",
+        "टेम्पलेट चुनें (Select Template):",
         ["Appointment Confirmation", "Fees Receipt", "Next Follow-up Reminder"],
         key=f"{key_prefix}_wa_template",
     )
@@ -180,7 +180,7 @@ def render_whatsapp_sender(data, key_prefix):
     due = max(0, total_charge - fees)
 
     if template_choice == "Next Follow-up Reminder":
-        followup_date = st.date_input("अगली फॉलो-अप तारीख:", datetime.today() + timedelta(days=7), key=f"{key_prefix}_followup_date")
+        followup_date = st.date_input("अगली फॉलो-अप तारीख (Next Follow-up Date):", datetime.today() + timedelta(days=7), key=f"{key_prefix}_followup_date")
         message = (
             f"Hello {parent_name},\n\n"
             f"This is a reminder from Normal Child Clinic ({center}) for {child_name}'s next follow-up visit "
@@ -206,13 +206,13 @@ def render_whatsapp_sender(data, key_prefix):
         )
 
     mobile = str(data.get('Mobile', '')).strip()
-    with st.expander("मैसेज प्रीव्यू देखें"):
+    with st.expander("मैसेज प्रीव्यू देखें (Preview Message)"):
         st.text(message)
 
     if _clean_whatsapp_number(mobile):
-        st.link_button("📲 WhatsApp पर भेजें", build_whatsapp_url(mobile, message), key=f"{key_prefix}_wa_send")
+        st.link_button("📲 WhatsApp पर भेजें (Send via WhatsApp)", build_whatsapp_url(mobile, message), key=f"{key_prefix}_wa_send")
     else:
-        st.caption("⚠️ मोबाइल नंबर उपलब्ध नहीं है।")
+        st.caption("⚠️ मोबाइल नंबर उपलब्ध नहीं है। (Mobile number not available.)")
 
 def render_appointment_whatsapp(name, mobile, center, date_str, time_slot, token):
     message = (
@@ -223,13 +223,13 @@ def render_appointment_whatsapp(name, mobile, center, date_str, time_slot, token
         f"Token No: {token}\n\n"
         f"Please arrive 10 minutes early. Thank you!"
     )
-    st.markdown("**📲 WhatsApp पर अपॉइंटमेंट डिटेल भेजें**")
-    with st.expander("मैसेज प्रीव्यू देखें"):
+    st.markdown("**📲 WhatsApp पर अपॉइंटमेंट डिटेल भेजें (Send Appointment Details via WhatsApp)**")
+    with st.expander("मैसेज प्रीव्यू देखें (Preview Message)"):
         st.text(message)
     if _clean_whatsapp_number(mobile):
-        st.link_button("📲 WhatsApp पर भेजें", build_whatsapp_url(mobile, message), key=f"appt_wa_{token}_{mobile}")
+        st.link_button("📲 WhatsApp पर भेजें (Send via WhatsApp)", build_whatsapp_url(mobile, message), key=f"appt_wa_{token}_{mobile}")
     else:
-        st.caption("⚠️ मोबाइल नंबर उपलब्ध नहीं है।")
+        st.caption("⚠️ मोबाइल नंबर उपलब्ध नहीं है। (Mobile number not available.)")
 
 # --- 🔐 पासवर्ड हैशिंग हेल्पर्स ---
 def hash_password(password):
@@ -2032,12 +2032,12 @@ if st.session_state['logged_in']:
         with tab_ap1:
             if st.session_state.get('last_appointment'):
                 last_appt = st.session_state['last_appointment']
-                st.success(f"🎉 {last_appt['Name']} की अपॉइंटमेंट बुक हो गई! टोकन नंबर: #{last_appt['Token']} — WhatsApp पर भेजें:")
+                st.success(f"🎉 {last_appt['Name']} की अपॉइंटमेंट बुक हो गई! टोकन नंबर: #{last_appt['Token']} — WhatsApp पर भेजें: (Appointment booked! Token #{last_appt['Token']})")
                 render_appointment_whatsapp(last_appt['Name'], last_appt['Mobile'], last_appt['Center'], last_appt['Date'], last_appt['Time Slot'], last_appt['Token'])
                 st.markdown("---")
 
             if selected_center == "HR_Admin":
-                ap_center = st.selectbox("🎯 सेंटर चुनें:", actual_centers, key="ap_center")
+                ap_center = st.selectbox("🎯 सेंटर चुनें (Select Center):", actual_centers, key="ap_center")
             else:
                 ap_center = selected_center
 
@@ -2045,31 +2045,31 @@ if st.session_state['logged_in']:
             center_registered_patients = patients_for_appt[patients_for_appt['Center'] == ap_center] if not patients_for_appt.empty else pd.DataFrame()
             unique_patients = center_registered_patients.drop_duplicates(subset=['Child Name', 'Mobile']) if not center_registered_patients.empty else pd.DataFrame()
 
-            entry_mode = st.radio("मरीज कैसे चुनें:", ["📋 रजिस्टर्ड मरीज चुनें", "✍️ नया नाम टाइप करें"], horizontal=True, key="ap_entry_mode")
+            entry_mode = st.radio("मरीज कैसे चुनें (How to Select Patient):", ["📋 रजिस्टर्ड मरीज चुनें (Select Registered Patient)", "✍️ नया नाम टाइप करें (Type New Name)"], horizontal=True, key="ap_entry_mode")
 
             col_a1, col_a2 = st.columns(2)
             with col_a1:
-                if entry_mode == "📋 रजिस्टर्ड मरीज चुनें":
+                if entry_mode == "📋 रजिस्टर्ड मरीज चुनें (Select Registered Patient)":
                     if unique_patients.empty:
-                        st.info("इस सेंटर में अभी कोई रजिस्टर्ड मरीज नहीं है। 'नया नाम टाइप करें' चुनें।")
+                        st.info("इस सेंटर में अभी कोई रजिस्टर्ड मरीज नहीं है। 'नया नाम टाइप करें' चुनें। (No registered patients — use 'Type New Name'.)")
                         ap_name, ap_mobile = "", ""
                     else:
                         patient_search_options = {f"{r['Child Name']} - {r['Mobile']}": (r['Child Name'], r['Mobile']) for _, r in unique_patients.iterrows()}
-                        selected_patient_label = st.selectbox("🔍 मरीज खोजें/चुनें (टाइप करके सर्च करें):", list(patient_search_options.keys()), key="ap_patient_select")
+                        selected_patient_label = st.selectbox("🔍 मरीज खोजें/चुनें (टाइप करके सर्च करें) (Search/Select Patient):", list(patient_search_options.keys()), key="ap_patient_select")
                         ap_name, ap_mobile = patient_search_options[selected_patient_label]
-                        st.caption(f"📞 मोबाइल: {ap_mobile}")
+                        st.caption(f"📞 मोबाइल (Mobile): {ap_mobile}")
                 else:
-                    ap_name = st.text_input("🧒 बच्चे/मरीज का नाम:", key="ap_manual_name")
-                    ap_mobile = st.text_input("📞 मोबाइल नंबर:", max_chars=10, key="ap_manual_mobile")
+                    ap_name = st.text_input("🧒 बच्चे/मरीज का नाम (Patient Name):", key="ap_manual_name")
+                    ap_mobile = st.text_input("📞 मोबाइल नंबर (Mobile Number):", max_chars=10, key="ap_manual_mobile")
             with col_a2:
-                ap_date = st.date_input("📆 अपॉइंटमेंट तारीख:", datetime.today(), key="ap_date")
-                ap_slot = st.selectbox("⏰ टाइम स्लॉट चुनें:", time_slots)
+                ap_date = st.date_input("📆 अपॉइंटमेंट तारीख (Appointment Date):", datetime.today(), key="ap_date")
+                ap_slot = st.selectbox("⏰ टाइम स्लॉट चुनें (Select Time Slot):", time_slots)
 
-            if st.button("🎯 अपॉइंटमेंट बुक करें"):
+            if st.button("🎯 अपॉइंटमेंट बुक करें (Book Appointment)"):
                 if not ap_name or not ap_mobile:
-                    st.warning("⚠️ कृपया नाम और मोबाइल नंबर भरें।")
+                    st.warning("⚠️ कृपया नाम और मोबाइल नंबर भरें। (Please fill name and mobile number.)")
                 elif not is_valid_mobile(ap_mobile):
-                    st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए।")
+                    st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए। (Mobile number must be 10 digits.)")
                 else:
                     try:
                         ap_sheet = sh.worksheet("Appointments")
@@ -2099,7 +2099,7 @@ if st.session_state['logged_in']:
                 today_ap = appointments_df[(appointments_df['Center'] == admin_view) & (appointments_df['Date'] == today_date)] if not appointments_df.empty else pd.DataFrame()
 
             if today_ap.empty:
-                st.info("💡 आज के लिए कोई अपॉइंटमेंट बुक नहीं है।")
+                st.info("💡 आज के लिए कोई अपॉइंटमेंट बुक नहीं है। (No appointments booked for today.)")
             else:
                 today_ap = today_ap.copy()
                 today_ap['Token'] = pd.to_numeric(today_ap['Token'], errors='coerce')
@@ -2107,11 +2107,11 @@ if st.session_state['logged_in']:
                 st.dataframe(today_ap[['Token', 'Name', 'Mobile', 'Time Slot', 'Status', 'Center']].reset_index(drop=True), use_container_width=True)
 
                 st.markdown("---")
-                st.subheader("✅ स्टेटस अपडेट करें")
+                st.subheader("✅ स्टेटस अपडेट करें (Update Status)")
                 ap_status_options = {f"Token #{int(r['Token'])} - {r['Name']} ({r['Time Slot']})": r['ID'] for _, r in today_ap.iterrows()}
-                ap_selected_label = st.selectbox("अपॉइंटमेंट चुनें:", list(ap_status_options.keys()), key="ap_status_select")
-                new_ap_status = st.selectbox("नया स्टेटस:", ["Booked", "Completed", "Cancelled", "No Show"], key="ap_new_status")
-                if st.button("💾 स्टेटस अपडेट करें"):
+                ap_selected_label = st.selectbox("अपॉइंटमेंट चुनें (Select Appointment):", list(ap_status_options.keys()), key="ap_status_select")
+                new_ap_status = st.selectbox("नया स्टेटस (New Status):", ["Booked", "Completed", "Cancelled", "No Show"], key="ap_new_status")
+                if st.button("💾 स्टेटस अपडेट करें (Update Status)"):
                     ap_sheet = sh.worksheet("Appointments")
                     all_ap_rows = ap_sheet.get_all_values()
                     target_ap_id = str(ap_status_options[ap_selected_label])
@@ -2120,8 +2120,8 @@ if st.session_state['logged_in']:
                         ap_sheet.update_cell(row_to_update, 8, new_ap_status)
                         log_audit(current_actor(), "Update Appointment Status", f"{ap_selected_label} -> {new_ap_status}")
                         st.cache_data.clear()
-                        st.success("✅ स्टेटस अपडेट हो गया!")
+                        st.success("✅ स्टेटस अपडेट हो गया! (Status updated!)")
                         st.rerun()
 
 else:
-    st.info("🔒 कृपया डेटा एक्सेस करने के लिए पासवर्ड डालकर 'Login' बटन पर क्लिक करें।")
+    st.info("🔒 कृपया डेटा एक्सेस करने के लिए पासवर्ड डालकर 'Login' बटन पर क्लिक करें। (Please log in to access data.)")
