@@ -329,6 +329,14 @@ def sync_monthly_attendance_to_sheet(sh, summary_df, month_year, center_filter):
         logger.warning(f"sync_monthly_attendance_to_sheet failed for {month_year}/{center_filter}: {e}")
         return False
 
+# --- 👤 रोल-वाइज मेनू एक्सेस (स्टाफ लॉगिन के लिए) ---
+ROLE_MENU_ACCESS = {
+    "Homeopathic Doctor": ["🏠 डैशबोर्ड (Dashboard)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "📊 रिपोर्ट सेंटर (Advanced Reports)"],
+    "Receptionist": ["🏠 डैशबोर्ड (Dashboard)", "📅 दैनिक हाजिरी (Attendance)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "🎫 अपॉइंटमेंट (Appointments)"],
+    "Pharmacist (Medicine Maker)": ["🏠 डैशबोर्ड (Dashboard)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)"],
+    "Maid / Housekeeping": ["🏠 डैशबोर्ड (Dashboard)"],
+}
+
 # --- 📝 ऑडिट लॉग ---
 def log_audit(actor, action, details):
     try:
@@ -340,6 +348,12 @@ def log_audit(actor, action, details):
         audit_sheet.append_row([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), str(actor), str(action), str(details)])
     except Exception as e:
         logger.warning(f"log_audit failed: {e}")
+
+def current_actor():
+    if st.session_state.get('login_mode') == 'staff' and st.session_state.get('staff_user'):
+        u = st.session_state['staff_user']
+        return f"{u['Full Name']} ({u['Role']}, {u['Center']})"
+    return selected_center
 
 # --- 🔑 लाइव पासवर्ड मैनेजर ---
 @st.cache_data(ttl=5)
@@ -370,22 +384,32 @@ live_centers = list(PASSWORDS.keys())
 actual_centers = [c for c in live_centers if c != "HR_Admin"]
 actual_centers.sort()
 
-login_options = actual_centers + ["HR_Admin"]
-selected_center = st.sidebar.selectbox("🎯 सेंटर का चयन करें (Center):", login_options)
-input_password = st.sidebar.text_input(f"🔑 {selected_center} का पासवर्ड डालें:", type="password")
+login_mode = st.sidebar.radio("🔀 लॉगिन तरीका:", ["🏢 सेंटर लॉगिन", "👤 स्टाफ लॉगिन (Individual)"], key="login_mode_choice", horizontal=True)
+
+if login_mode == "🏢 सेंटर लॉगिन":
+    login_options = actual_centers + ["HR_Admin"]
+    selected_center = st.sidebar.selectbox("🎯 सेंटर का चयन करें (Center):", login_options)
+    input_password = st.sidebar.text_input(f"🔑 {selected_center} का पासवर्ड डालें:", type="password")
+    current_identity = f"center:{selected_center}"
+else:
+    selected_center = None
+    staff_username = st.sidebar.text_input("👤 यूज़रनेम:", key="staff_username_input")
+    staff_password = st.sidebar.text_input("🔑 पासवर्ड:", type="password", key="staff_password_input")
+    current_identity = f"staff:{staff_username.strip().lower()}"
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
-if 'current_center' not in st.session_state:
-    st.session_state['current_center'] = selected_center
+if 'current_identity' not in st.session_state:
+    st.session_state['current_identity'] = current_identity
 if 'login_attempts' not in st.session_state:
     st.session_state['login_attempts'] = 0
 if 'lockout_until' not in st.session_state:
     st.session_state['lockout_until'] = None
 
-if st.session_state['current_center'] != selected_center:
+if st.session_state['current_identity'] != current_identity:
     st.session_state['logged_in'] = False
-    st.session_state['current_center'] = selected_center
+    st.session_state['staff_user'] = None
+    st.session_state['current_identity'] = current_identity
 
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 5
@@ -409,6 +433,19 @@ def _check_and_migrate(center_key, provided_password):
         return True
     return False
 
+def _check_staff_login(username, provided_password):
+    users_df = load_cloud_data_fast("Users")
+    if users_df.empty or not username:
+        return None
+    match = users_df[users_df['Username'].astype(str).str.strip().str.lower() == username.strip().lower()]
+    if match.empty:
+        return None
+    user_row = match.iloc[0]
+    stored = str(user_row['PasswordHash'])
+    if is_hashed(stored) and verify_password(stored, provided_password):
+        return {'Username': user_row['Username'], 'Full Name': user_row['Full Name'], 'Role': user_row['Role'], 'Center': user_row['Center']}
+    return None
+
 now = datetime.now()
 locked_out = st.session_state['lockout_until'] and now < st.session_state['lockout_until']
 
@@ -416,7 +453,20 @@ if locked_out:
     remaining = int((st.session_state['lockout_until'] - now).total_seconds())
     st.sidebar.error(f"🔒 बहुत ज़्यादा गलत प्रयास। कृपया {remaining} सेकंड बाद कोशिश करें।")
 elif st.sidebar.button("🚀 Login"):
-    if _check_and_migrate(selected_center, input_password) or _check_and_migrate("HR_Admin", input_password):
+    login_success = False
+    if login_mode == "🏢 सेंटर लॉगिन":
+        if _check_and_migrate(selected_center, input_password) or _check_and_migrate("HR_Admin", input_password):
+            login_success = True
+            st.session_state['login_mode'] = 'center'
+            st.session_state['staff_user'] = None
+    else:
+        matched_user = _check_staff_login(staff_username, staff_password)
+        if matched_user:
+            login_success = True
+            st.session_state['login_mode'] = 'staff'
+            st.session_state['staff_user'] = matched_user
+
+    if login_success:
         st.session_state['logged_in'] = True
         st.session_state['login_attempts'] = 0
         st.session_state['lockout_until'] = None
@@ -428,14 +478,21 @@ elif st.sidebar.button("🚀 Login"):
             st.sidebar.error(f"🔒 {MAX_LOGIN_ATTEMPTS} गलत प्रयासों के बाद लॉगिन {LOCKOUT_MINUTES} मिनट के लिए लॉक हो गया।")
         else:
             left = MAX_LOGIN_ATTEMPTS - st.session_state['login_attempts']
-            st.sidebar.error(f"❌ गलत पासवर्ड! ({left} प्रयास शेष)")
+            st.sidebar.error(f"❌ गलत यूज़रनेम/पासवर्ड! ({left} प्रयास शेष)")
+
+if st.session_state.get('logged_in') and st.session_state.get('login_mode') == 'staff' and st.session_state.get('staff_user'):
+    selected_center = st.session_state['staff_user']['Center']
 
 today_date = datetime.today().strftime('%Y-%m-%d')
 
 if st.session_state['logged_in']:
-    st.sidebar.success("🔓 एक्सेस स्वीकृत")
+    if st.session_state.get('login_mode') == 'staff' and st.session_state.get('staff_user'):
+        st.sidebar.success(f"🔓 स्वागत है, {st.session_state['staff_user']['Full Name']} ({st.session_state['staff_user']['Role']})")
+    else:
+        st.sidebar.success("🔓 एक्सेस स्वीकृत")
     if st.sidebar.button("🚪 Logout"):
         st.session_state['logged_in'] = False
+        st.session_state['staff_user'] = None
         st.rerun()
 
     if selected_center == "HR_Admin":
@@ -446,6 +503,12 @@ if st.session_state['logged_in']:
 
     menu_options = ["🏠 डैशबोर्ड (Dashboard)", "👥 स्टाफ मैनेजमेंट (HR & Staff)", "📅 दैनिक हाजिरी (Attendance)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "📊 रिपोर्ट सेंटर (Advanced Reports)", "💰 फाइनेंस (Finance)", "🎫 अपॉइंटमेंट (Appointments)"]
     if selected_center == "HR_Admin": menu_options.append("🔑 पासवर्ड व क्लिनिक मैनेजर")
+
+    if st.session_state.get('login_mode') == 'staff' and st.session_state.get('staff_user'):
+        allowed_menus = ROLE_MENU_ACCESS.get(st.session_state['staff_user']['Role'])
+        if allowed_menus:
+            menu_options = [m for m in menu_options if m in allowed_menus]
+
     menu = st.sidebar.radio("🧭 मेनू नेविगेशन:", menu_options)
     
     if menu == "🏠 डैशबोर्ड (Dashboard)":
@@ -595,7 +658,7 @@ if st.session_state['logged_in']:
                     else:
                         next_s_id = 1
                     sh.worksheet("Staff").append_row([next_s_id, s_name, s_role, str(s_mobile), s_target_center, int(s_salary)])
-                    log_audit(selected_center, "Add Staff", f"{s_name} ({s_role}) added to {s_target_center}, ID {next_s_id}")
+                    log_audit(current_actor(), "Add Staff", f"{s_name} ({s_role}) added to {s_target_center}, ID {next_s_id}")
                     st.cache_data.clear()
                     st.success(f"🎉 {s_name} को सफलतापूर्वक {s_target_center} सेंटर में जोड़ दिया गया है!")
                     st.rerun()
@@ -627,7 +690,7 @@ if st.session_state['logged_in']:
                     row_to_delete = next((idx + 2 for idx, r in enumerate(all_s_rows[1:]) if r and str(r[0]).strip() == target_s_id), None)
                     if row_to_delete:
                         s_sheet.delete_rows(row_to_delete)
-                        log_audit(selected_center, "Delete Staff", f"{del_staff_label}")
+                        log_audit(current_actor(), "Delete Staff", f"{del_staff_label}")
                         st.cache_data.clear()
                         st.success("🗑️ स्टाफ रिकॉर्ड डिलीट हो गया है!")
                         st.rerun()
@@ -674,7 +737,7 @@ if st.session_state['logged_in']:
                         else:
                             s_sheet = sh.worksheet("Staff")
                             s_sheet.update(range_name=f"A{real_s_row_idx}:F{real_s_row_idx}", values=[[int(staff_edit_options[selected_staff_label]), edit_s_name, edit_s_role, str(edit_s_mobile), edit_s_center, int(edit_s_salary)]])
-                            log_audit(selected_center, "Edit Staff", f"ID {staff_edit_options[selected_staff_label]} ({edit_s_name}) updated")
+                            log_audit(current_actor(), "Edit Staff", f"ID {staff_edit_options[selected_staff_label]} ({edit_s_name}) updated")
                             st.cache_data.clear()
                             st.success("📝 स्टाफ रिकॉर्ड सफलतापूर्वक अपडेट हो गया!")
                             st.rerun()
@@ -772,7 +835,7 @@ if st.session_state['logged_in']:
                                     next_leave_id, int(leave_staff_row['ID']), leave_staff_row['Name'], leave_staff_row['Center'],
                                     leave_from.strftime('%Y-%m-%d'), leave_to.strftime('%Y-%m-%d'), leave_reason, "Pending", today_date
                                 ])
-                                log_audit(selected_center, "Apply Leave", f"{leave_staff_row['Name']} ({leave_from} to {leave_to})")
+                                log_audit(current_actor(), "Apply Leave", f"{leave_staff_row['Name']} ({leave_from} to {leave_to})")
                                 st.cache_data.clear()
                                 st.success("🎉 लीव एप्लीकेशन सबमिट हो गई है, अप्रूवल का इंतज़ार है।")
                                 st.rerun()
@@ -830,7 +893,7 @@ if st.session_state['logged_in']:
                                                 att_id_counter += 1
                                     except Exception as e:
                                         logger.warning(f"Attendance auto-mark on leave approval failed: {e}")
-                                    log_audit(selected_center, "Approve Leave", leave_action_label)
+                                    log_audit(current_actor(), "Approve Leave", leave_action_label)
                                     st.cache_data.clear()
                                     st.success("✅ लीव अप्रूव हो गई और अटेंडेंस अपडेट हो गई!")
                                     st.rerun()
@@ -842,7 +905,7 @@ if st.session_state['logged_in']:
                                 row_to_update = next((idx + 2 for idx, r in enumerate(all_leave_rows[1:]) if r and str(r[0]).strip() == target_leave_id), None)
                                 if row_to_update:
                                     leave_sheet.update_cell(row_to_update, 8, "Rejected")
-                                    log_audit(selected_center, "Reject Leave", leave_action_label)
+                                    log_audit(current_actor(), "Reject Leave", leave_action_label)
                                     st.cache_data.clear()
                                     st.success("❌ लीव रिजेक्ट कर दी गई है।")
                                     st.rerun()
@@ -895,7 +958,7 @@ if st.session_state['logged_in']:
                             next_id_counter += 1
                             att_sheet.append_row([next_id, int(s_id), info['name'], today_date, info['status'], att_center])
                             all_rows.append([next_id, int(s_id), info['name'], today_date, info['status'], att_center])
-                    log_audit(selected_center, "Submit Attendance", f"{att_center} - {today_date} ({len(attendance_dict)} स्टाफ)")
+                    log_audit(current_actor(), "Submit Attendance", f"{att_center} - {today_date} ({len(attendance_dict)} स्टाफ)")
                     st.cache_data.clear()
                     st.success(f"✅ {att_center} सेंटर का अटेंडेंस शीट डेटा lock हो गया है!")
                     st.rerun()
@@ -951,7 +1014,7 @@ if st.session_state['logged_in']:
                     next_p_id = max(existing_p_ids) + 1 if existing_p_ids else 1
                     effective_total_charge = c_total_charge if c_total_charge > 0 else c_fees
                     p_sheet.append_row([next_p_id, c_name, p_name, int(c_age), c_cond, str(p_mobile), p_target_center, today_date, int(c_fees), "", p_type, p_doctor, int(effective_total_charge)])
-                    log_audit(selected_center, "Add Patient", f"{c_name} s/o {p_name} added to {p_target_center}, ID {next_p_id}")
+                    log_audit(current_actor(), "Add Patient", f"{c_name} s/o {p_name} added to {p_target_center}, ID {next_p_id}")
                     sync_total_fees_batch(sh, today_date, p_target_center)
                     sync_daily_collection_to_sheet(sh, today_date, p_target_center)
                     st.session_state['last_receipt'] = {
@@ -1026,7 +1089,7 @@ if st.session_state['logged_in']:
                                 p_orig_center = str(pat_data['Center'])
                                 p_sheet.update(range_name=f"A{real_p_row_idx}:M{real_p_row_idx}", values=[[int(patient_options[selected_pat_label]), edit_c_name, edit_p_name, int(edit_c_age), edit_c_cond, str(edit_p_mobile), p_orig_center, str(pat_data['Date']), int(edit_c_fees), "", edit_p_type, edit_p_doctor, int(edit_c_total_charge)]])
                                 target_date = str(pat_data['Date'])
-                                log_audit(selected_center, "Edit Patient", f"ID {patient_options[selected_pat_label]} ({edit_c_name}) updated")
+                                log_audit(current_actor(), "Edit Patient", f"ID {patient_options[selected_pat_label]} ({edit_c_name}) updated")
                                 sync_total_fees_batch(sh, target_date, p_orig_center)
                                 sync_daily_collection_to_sheet(sh, target_date, p_orig_center)
                                 st.cache_data.clear()
@@ -1036,7 +1099,7 @@ if st.session_state['logged_in']:
                         if st.button("🗑️ मरीज रिकॉर्ड डिलीट करें"):
                             p_sheet = sh.worksheet("Patients")
                             p_sheet.delete_rows(real_p_row_idx)
-                            log_audit(selected_center, "Delete Patient", f"ID {patient_options[selected_pat_label]} ({pat_data['Child Name']}) deleted")
+                            log_audit(current_actor(), "Delete Patient", f"ID {patient_options[selected_pat_label]} ({pat_data['Child Name']}) deleted")
                             st.cache_data.clear()
                             st.success("🗑️ मरीज रिकॉर्ड डिलीट हो गया है!")
                             st.rerun()
@@ -1274,7 +1337,7 @@ if st.session_state['logged_in']:
     elif menu == "🔑 पासवर्ड व क्लिनिक मैनेजर":
         st.markdown("<h2>🔑 पासवर्ड व सेंटर मैनेजमेंट</h2>", unsafe_allow_html=True)
         
-        tab_pwd, tab_center = st.tabs(["🔐 पासवर्ड मैनेजमेंट", "🏥 सेंटर मैनेजमेंट"])
+        tab_pwd, tab_center, tab_users = st.tabs(["🔐 पासवर्ड मैनेजमेंट", "🏥 सेंटर मैनेजमेंट", "👤 यूज़र मैनेजमेंट (Individual Login)"])
         
         pwd_sheet = sh.worksheet("Passwords")
         p_records = pwd_sheet.get_all_records()
@@ -1286,7 +1349,7 @@ if st.session_state['logged_in']:
                 row_to_update = next((idx + 2 for idx, r in enumerate(p_records) if r['Center'] == edit_center), None)
                 if row_to_update and new_pwd_input.strip():
                     pwd_sheet.update(range_name=f"B{row_to_update}", values=[[hash_password(new_pwd_input.strip())]])
-                    log_audit(selected_center, "Update Password", f"Password changed for {edit_center}")
+                    log_audit(current_actor(), "Update Password", f"Password changed for {edit_center}")
                     st.cache_data.clear()
                     st.success("🎉 पासवर्ड अपडेट हो गया!")
                     st.rerun()
@@ -1298,7 +1361,7 @@ if st.session_state['logged_in']:
             if st.button("🚀 नया सेंटर जोड़ें"):
                 if new_center_name and new_center_pwd:
                     pwd_sheet.append_row([new_center_name, hash_password(new_center_pwd)])
-                    log_audit(selected_center, "Add Center", f"Center '{new_center_name}' added")
+                    log_audit(current_actor(), "Add Center", f"Center '{new_center_name}' added")
                     st.cache_data.clear()
                     st.success(f"🎉 सेंटर '{new_center_name}' सफलतापूर्वक जुड़ गया!")
                     st.rerun()
@@ -1317,10 +1380,65 @@ if st.session_state['logged_in']:
                     row_idx = next((idx + 2 for idx, r in enumerate(p_records) if r['Center'] == del_center), None)
                     if row_idx:
                         pwd_sheet.delete_rows(row_idx)
-                        log_audit(selected_center, "Delete Center", f"Center '{del_center}' deleted")
+                        log_audit(current_actor(), "Delete Center", f"Center '{del_center}' deleted")
                         st.cache_data.clear()
                         st.success(f"🗑️ सेंटर '{del_center}' हटा दिया गया है!")
                         st.rerun()
+
+        with tab_users:
+            st.caption("यहाँ से हर स्टाफ सदस्य के लिए अलग यूज़रनेम/पासवर्ड बनाएं ताकि वो सेंटर पासवर्ड के बजाय अपनी खुद की लॉगिन (सिर्फ उनके रोल जितनी एक्सेस के साथ) इस्तेमाल कर सके।")
+            user_role_options = ["Homeopathic Doctor", "Pharmacist (Medicine Maker)", "Receptionist", "Maid / Housekeeping"]
+            col_u1, col_u2 = st.columns(2)
+            with col_u1:
+                new_username = st.text_input("यूज़रनेम:", key="new_username")
+                new_user_fullname = st.text_input("पूरा नाम:", key="new_user_fullname")
+                new_user_role = st.selectbox("रोल:", user_role_options, key="new_user_role")
+            with col_u2:
+                new_user_center = st.selectbox("सेंटर:", actual_centers, key="new_user_center")
+                new_user_password = st.text_input("पासवर्ड:", type="password", key="new_user_password")
+            if st.button("🚀 यूज़र बनाएं"):
+                if not new_username or not new_user_fullname or not new_user_password:
+                    st.warning("⚠️ कृपया सभी फ़ील्ड भरें।")
+                else:
+                    try:
+                        users_sheet = sh.worksheet("Users")
+                    except Exception:
+                        users_sheet = sh.add_worksheet(title="Users", rows="1000", cols="6")
+                        users_sheet.update(range_name="A1:F1", values=[["ID", "Username", "Full Name", "Role", "Center", "PasswordHash"]])
+                    all_user_rows = users_sheet.get_all_values()
+                    if any(str(r[1]).strip().lower() == new_username.strip().lower() for r in all_user_rows[1:] if len(r) > 1):
+                        st.error("❌ यह यूज़रनेम पहले से मौजूद है, कोई दूसरा चुनें।")
+                    else:
+                        existing_user_ids = [int(r[0]) for r in all_user_rows[1:] if r and str(r[0]).strip().isdigit()]
+                        next_user_id = max(existing_user_ids) + 1 if existing_user_ids else 1
+                        users_sheet.append_row([next_user_id, new_username.strip(), new_user_fullname, new_user_role, new_user_center, hash_password(new_user_password)])
+                        log_audit(current_actor(), "Add User", f"{new_username} ({new_user_role}, {new_user_center})")
+                        st.cache_data.clear()
+                        st.success(f"🎉 यूज़र '{new_username}' बन गया है!")
+                        st.rerun()
+
+            st.markdown("---")
+            st.subheader("📋 मौजूदा यूज़र्स")
+            users_df = load_cloud_data_fast("Users")
+            if users_df.empty:
+                st.info("अभी कोई इंडिविजुअल यूज़र नहीं बना है।")
+            else:
+                st.dataframe(users_df[['ID', 'Username', 'Full Name', 'Role', 'Center']].reset_index(drop=True), use_container_width=True)
+                st.subheader("🗑️ यूज़र हटाएं")
+                del_user_options = {f"{r['Username']} - {r['Full Name']} ({r['Center']})": r['ID'] for _, r in users_df.iterrows()}
+                del_user_label = st.selectbox("हटाने के लिए यूज़र चुनें:", list(del_user_options.keys()), key="del_user_select")
+                if st.button("❌ यूज़र डिलीट करें"):
+                    users_sheet = sh.worksheet("Users")
+                    all_user_rows = users_sheet.get_all_values()
+                    target_user_id = str(del_user_options[del_user_label])
+                    row_to_delete = next((idx + 2 for idx, r in enumerate(all_user_rows[1:]) if r and str(r[0]).strip() == target_user_id), None)
+                    if row_to_delete:
+                        users_sheet.delete_rows(row_to_delete)
+                        log_audit(current_actor(), "Delete User", del_user_label)
+                        st.cache_data.clear()
+                        st.success("🗑️ यूज़र डिलीट हो गया है!")
+                        st.rerun()
+
     elif menu == "💰 फाइनेंस (Finance)":
         st.markdown("<h2>💰 फाइनेंस मैनेजमेंट</h2>", unsafe_allow_html=True)
         tab_f1, tab_f2, tab_f3 = st.tabs(["➕ खर्च जोड़ें", "📋 खर्च सूची", "📊 रेवेन्यू vs एक्सपेंस"])
@@ -1351,7 +1469,7 @@ if st.session_state['logged_in']:
                     existing_exp_ids = [int(r[0]) for r in all_exp_rows[1:] if r and str(r[0]).strip().isdigit()]
                     next_exp_id = max(existing_exp_ids) + 1 if existing_exp_ids else 1
                     exp_sheet.append_row([next_exp_id, exp_date.strftime('%Y-%m-%d'), exp_center, exp_category, int(exp_amount), exp_desc])
-                    log_audit(selected_center, "Add Expense", f"{exp_category} - ₹{int(exp_amount)} ({exp_center})")
+                    log_audit(current_actor(), "Add Expense", f"{exp_category} - ₹{int(exp_amount)} ({exp_center})")
                     st.cache_data.clear()
                     st.success("🎉 खर्च सफलतापूर्वक दर्ज हो गया!")
                     st.rerun()
@@ -1380,7 +1498,7 @@ if st.session_state['logged_in']:
                     row_to_delete = next((idx + 2 for idx, r in enumerate(all_exp_rows[1:]) if r and str(r[0]).strip() == target_exp_id), None)
                     if row_to_delete:
                         exp_sheet.delete_rows(row_to_delete)
-                        log_audit(selected_center, "Delete Expense", del_exp_label)
+                        log_audit(current_actor(), "Delete Expense", del_exp_label)
                         st.cache_data.clear()
                         st.success("🗑️ खर्च एंट्री डिलीट हो गई है!")
                         st.rerun()
@@ -1462,7 +1580,7 @@ if st.session_state['logged_in']:
                     same_day_tokens = [int(r[1]) for r in all_ap_rows[1:] if len(r) >= 6 and str(r[4]).strip() == ap_center and str(r[5]).strip() == ap_date_str and str(r[1]).strip().isdigit()]
                     next_token = max(same_day_tokens) + 1 if same_day_tokens else 1
                     ap_sheet.append_row([next_ap_id, next_token, ap_name, str(ap_mobile), ap_center, ap_date_str, ap_slot, "Booked"])
-                    log_audit(selected_center, "Book Appointment", f"{ap_name} ({ap_center}) - {ap_date_str} {ap_slot}, Token #{next_token}")
+                    log_audit(current_actor(), "Book Appointment", f"{ap_name} ({ap_center}) - {ap_date_str} {ap_slot}, Token #{next_token}")
                     st.cache_data.clear()
                     st.success(f"🎉 अपॉइंटमेंट बुक हो गई! आपका टोकन नंबर है: #{next_token}")
                     st.rerun()
@@ -1494,7 +1612,7 @@ if st.session_state['logged_in']:
                     row_to_update = next((idx + 2 for idx, r in enumerate(all_ap_rows[1:]) if r and str(r[0]).strip() == target_ap_id), None)
                     if row_to_update:
                         ap_sheet.update_cell(row_to_update, 8, new_ap_status)
-                        log_audit(selected_center, "Update Appointment Status", f"{ap_selected_label} -> {new_ap_status}")
+                        log_audit(current_actor(), "Update Appointment Status", f"{ap_selected_label} -> {new_ap_status}")
                         st.cache_data.clear()
                         st.success("✅ स्टेटस अपडेट हो गया!")
                         st.rerun()
