@@ -147,6 +147,9 @@ def load_cloud_data_fast(sheet_name):
             if 'Total Charge' in df.columns:
                 df['Total Charge'] = df['Total Charge'].astype(str).str.replace('₹', '', regex=False).str.replace('/-', '', regex=False).str.replace(',', '', regex=False).str.strip()
                 df['Total Charge'] = pd.to_numeric(df['Total Charge'], errors='coerce').fillna(0).astype(int)
+        if sheet_name == "Expenses" and 'Amount' in df.columns:
+            df['Amount'] = df['Amount'].astype(str).str.replace('₹', '', regex=False).str.replace(',', '', regex=False).str.strip()
+            df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0).astype(int)
         return df
     except Exception as e:
         logger.warning(f"load_cloud_data_fast('{sheet_name}') failed: {e}")
@@ -362,7 +365,7 @@ if st.session_state['logged_in']:
     else:
         admin_view = selected_center
 
-    menu_options = ["🏠 डैशबोर्ड (Dashboard)", "👥 स्टाफ मैनेजमेंट (HR & Staff)", "📅 दैनिक हाजिरी (Attendance)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "📊 रिपोर्ट सेंटर (Advanced Reports)"]
+    menu_options = ["🏠 डैशबोर्ड (Dashboard)", "👥 स्टाफ मैनेजमेंट (HR & Staff)", "📅 दैनिक हाजिरी (Attendance)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "📊 रिपोर्ट सेंटर (Advanced Reports)", "💰 फाइनेंस (Finance)", "🎫 अपॉइंटमेंट (Appointments)"]
     if selected_center == "HR_Admin": menu_options.append("🔑 पासवर्ड व क्लिनिक मैनेजर")
     menu = st.sidebar.radio("🧭 मेनू नेविगेशन:", menu_options)
     
@@ -642,7 +645,7 @@ if st.session_state['logged_in']:
 
     elif menu == "🧒 मरीज रजिस्ट्रेशन (Patient Entry)":
         st.markdown("<h2>🧒 मरीज डिजिटल एंट्री व संशोधन</h2>", unsafe_allow_html=True)
-        tab_p1, tab_p2 = st.tabs(["🧒 नया मरीज रजिस्ट्रेशन", "✏️ मरीज विवरण एडिट करें"])
+        tab_p1, tab_p2, tab_p3 = st.tabs(["🧒 नया मरीज रजिस्ट्रेशन", "✏️ मरीज विवरण एडिट करें", "📜 विज़िट हिस्ट्री"])
         patients_df = load_cloud_data_fast("Patients")
         staff_df_for_doctor = load_cloud_data_fast("Staff")
         if admin_view == "सभी सेंटर्स (All Centers)":
@@ -751,6 +754,27 @@ if st.session_state['logged_in']:
                             st.cache_data.clear()
                             st.success("🗑️ मरीज रिकॉर्ड डिलीट हो गया है!")
                             st.rerun()
+
+        with tab_p3:
+            st.markdown("#### 📜 किसी भी मरीज की पूरी विज़िट हिस्ट्री देखें")
+            hist_search = st.text_input("🔍 मोबाइल नंबर या बच्चे का नाम डालें:", key="history_search")
+            if not hist_search:
+                st.info("💡 खोजने के लिए ऊपर मोबाइल नंबर या नाम टाइप करें।")
+            elif center_patients.empty:
+                st.info("कोई मरीज डेटा उपलब्ध नहीं है।")
+            else:
+                hist_mask = (
+                    center_patients['Mobile'].str.contains(hist_search, case=False, na=False)
+                    | center_patients['Child Name'].str.contains(hist_search, case=False, na=False)
+                )
+                hist_matches = center_patients[hist_mask]
+                if hist_matches.empty:
+                    st.info("💡 खोज से मेल खाता कोई मरीज नहीं मिला।")
+                else:
+                    hist_sorted = hist_matches.sort_values('Date', ascending=False)
+                    st.markdown(f"**कुल विज़िट: {len(hist_sorted)}**")
+                    hist_cols = [c for c in ['Date', 'Child Name', 'Parent Name', 'Age', 'Condition', 'Doctor', 'Fees', 'Total Charge', 'Patient Type', 'Center'] if c in hist_sorted.columns]
+                    st.dataframe(hist_sorted[hist_cols].reset_index(drop=True), use_container_width=True)
 
     elif menu == "📊 रिपोर्ट सेंटर (Advanced Reports)":
         st.markdown("<h2>📊 क्लिनिक एडवांस्ड रिपोर्ट पैनल</h2>", unsafe_allow_html=True)
@@ -1004,5 +1028,183 @@ if st.session_state['logged_in']:
                         st.cache_data.clear()
                         st.success(f"🗑️ सेंटर '{del_center}' हटा दिया गया है!")
                         st.rerun()
+    elif menu == "💰 फाइनेंस (Finance)":
+        st.markdown("<h2>💰 फाइनेंस मैनेजमेंट</h2>", unsafe_allow_html=True)
+        tab_f1, tab_f2, tab_f3 = st.tabs(["➕ खर्च जोड़ें", "📋 खर्च सूची", "📊 रेवेन्यू vs एक्सपेंस"])
+        expense_categories = ["Rent (किराया)", "Salary (सैलरी)", "Medicine Purchase (दवा खरीद)", "Electricity (बिजली)", "Maintenance (रखरखाव)", "Other (अन्य)"]
+
+        with tab_f1:
+            col_ex1, col_ex2 = st.columns(2)
+            with col_ex1:
+                exp_date = st.date_input("📆 तारीख:", datetime.today(), key="exp_date")
+                if selected_center == "HR_Admin":
+                    exp_center = st.selectbox("🎯 सेंटर चुनें:", actual_centers, key="exp_center")
+                else:
+                    exp_center = selected_center
+            with col_ex2:
+                exp_category = st.selectbox("📂 श्रेणी:", expense_categories, key="exp_category")
+                exp_amount = st.number_input("💵 राशि (₹):", min_value=0, value=0, step=100, key="exp_amount")
+            exp_desc = st.text_input("📝 विवरण (Description):", key="exp_desc")
+            if st.button("💾 खर्च सेव करें"):
+                if exp_amount <= 0:
+                    st.warning("⚠️ कृपया राशि 0 से ज्यादा डालें।")
+                else:
+                    try:
+                        exp_sheet = sh.worksheet("Expenses")
+                    except Exception:
+                        exp_sheet = sh.add_worksheet(title="Expenses", rows="1000", cols="6")
+                        exp_sheet.update(range_name="A1:F1", values=[["ID", "Date", "Center", "Category", "Amount", "Description"]])
+                    all_exp_rows = exp_sheet.get_all_values()
+                    existing_exp_ids = [int(r[0]) for r in all_exp_rows[1:] if r and str(r[0]).strip().isdigit()]
+                    next_exp_id = max(existing_exp_ids) + 1 if existing_exp_ids else 1
+                    exp_sheet.append_row([next_exp_id, exp_date.strftime('%Y-%m-%d'), exp_center, exp_category, int(exp_amount), exp_desc])
+                    log_audit(selected_center, "Add Expense", f"{exp_category} - ₹{int(exp_amount)} ({exp_center})")
+                    st.cache_data.clear()
+                    st.success("🎉 खर्च सफलतापूर्वक दर्ज हो गया!")
+                    st.rerun()
+
+        with tab_f2:
+            expenses_df = load_cloud_data_fast("Expenses")
+            if admin_view == "सभी सेंटर्स (All Centers)":
+                view_exp_df = expenses_df
+            else:
+                view_exp_df = expenses_df[expenses_df['Center'] == admin_view] if not expenses_df.empty and 'Center' in expenses_df.columns else pd.DataFrame()
+
+            if view_exp_df.empty:
+                st.info("कोई खर्च डेटा उपलब्ध नहीं है।")
+            else:
+                st.metric("कुल खर्च", f"₹ {int(view_exp_df['Amount'].sum())}/-")
+                st.dataframe(view_exp_df[['ID', 'Date', 'Center', 'Category', 'Amount', 'Description']].sort_values('Date', ascending=False).reset_index(drop=True), use_container_width=True)
+
+                st.markdown("---")
+                st.subheader("🗑️ खर्च एंट्री हटाएं")
+                del_exp_options = {f"{r['Date']} - {r['Category']} - ₹{r['Amount']} ({r['Center']})": r['ID'] for _, r in view_exp_df.iterrows()}
+                del_exp_label = st.selectbox("हटाने के लिए एंट्री चुनें:", list(del_exp_options.keys()), key="del_exp_select")
+                if st.button("❌ खर्च डिलीट करें"):
+                    exp_sheet = sh.worksheet("Expenses")
+                    all_exp_rows = exp_sheet.get_all_values()
+                    target_exp_id = str(del_exp_options[del_exp_label])
+                    row_to_delete = next((idx + 2 for idx, r in enumerate(all_exp_rows[1:]) if r and str(r[0]).strip() == target_exp_id), None)
+                    if row_to_delete:
+                        exp_sheet.delete_rows(row_to_delete)
+                        log_audit(selected_center, "Delete Expense", del_exp_label)
+                        st.cache_data.clear()
+                        st.success("🗑️ खर्च एंट्री डिलीट हो गई है!")
+                        st.rerun()
+
+        with tab_f3:
+            st.markdown("### 📊 रेवेन्यू vs एक्सपेंस रिपोर्ट")
+            rev_period = st.selectbox("📅 अवधि चुनें:", ["इस महीने (This Month)", "शुरू से अब तक (All Time)"], key="rev_exp_period")
+            rev_patients_df = load_cloud_data_fast("Patients")
+            rev_expenses_df = load_cloud_data_fast("Expenses")
+
+            if admin_view == "सभी सेंटर्स (All Centers)":
+                rev_p_df = rev_patients_df
+                rev_e_df = rev_expenses_df
+            else:
+                rev_p_df = rev_patients_df[rev_patients_df['Center'] == admin_view] if not rev_patients_df.empty else pd.DataFrame()
+                rev_e_df = rev_expenses_df[rev_expenses_df['Center'] == admin_view] if not rev_expenses_df.empty and 'Center' in rev_expenses_df.columns else pd.DataFrame()
+
+            if rev_period == "इस महीने (This Month)":
+                if not rev_p_df.empty: rev_p_df = rev_p_df[rev_p_df['Date'].astype(str).str.startswith(today_date[:7])]
+                if not rev_e_df.empty: rev_e_df = rev_e_df[rev_e_df['Date'].astype(str).str.startswith(today_date[:7])]
+
+            total_revenue = rev_p_df['Fees'].sum() if not rev_p_df.empty and 'Fees' in rev_p_df.columns else 0
+            total_expense = rev_e_df['Amount'].sum() if not rev_e_df.empty and 'Amount' in rev_e_df.columns else 0
+            net_profit = total_revenue - total_expense
+
+            col_r1, col_r2, col_r3 = st.columns(3)
+            with col_r1: st.metric("💵 कुल रेवेन्यू", f"₹ {int(total_revenue)}/-")
+            with col_r2: st.metric("💸 कुल खर्च", f"₹ {int(total_expense)}/-")
+            with col_r3: st.metric("📈 नेट प्रॉफिट", f"₹ {int(net_profit)}/-")
+
+            if not rev_e_df.empty:
+                st.markdown("##### 📂 श्रेणी-वार खर्च वितरण")
+                st.bar_chart(rev_e_df.groupby('Category')['Amount'].sum())
+
+            st.markdown("##### 📈 पिछले 6 महीनों का रेवेन्यू vs एक्सपेंस")
+            months_back = [(datetime.today().replace(day=1) - timedelta(days=30 * i)).strftime('%Y-%m') for i in range(5, -1, -1)]
+            all_p_for_trend = rev_patients_df if admin_view == "सभी सेंटर्स (All Centers)" else (rev_patients_df[rev_patients_df['Center'] == admin_view] if not rev_patients_df.empty else pd.DataFrame())
+            all_e_for_trend = rev_expenses_df if admin_view == "सभी सेंटर्स (All Centers)" else (rev_expenses_df[rev_expenses_df['Center'] == admin_view] if not rev_expenses_df.empty and 'Center' in rev_expenses_df.columns else pd.DataFrame())
+            monthly_rows = []
+            for m in months_back:
+                m_rev = all_p_for_trend[all_p_for_trend['Date'].astype(str).str.startswith(m)]['Fees'].sum() if not all_p_for_trend.empty else 0
+                m_exp = all_e_for_trend[all_e_for_trend['Date'].astype(str).str.startswith(m)]['Amount'].sum() if not all_e_for_trend.empty else 0
+                monthly_rows.append({"महीना": m, "रेवेन्यू": int(m_rev), "खर्च": int(m_exp)})
+            monthly_comp_df = pd.DataFrame(monthly_rows).set_index("महीना")
+            st.line_chart(monthly_comp_df)
+
+    elif menu == "🎫 अपॉइंटमेंट (Appointments)":
+        st.markdown("<h2>🎫 अपॉइंटमेंट / टोकन बुकिंग</h2>", unsafe_allow_html=True)
+        tab_ap1, tab_ap2 = st.tabs(["➕ नई अपॉइंटमेंट बुक करें", "📋 आज की टोकन क्यू"])
+        time_slots = ["09:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "11:00 AM - 12:00 PM", "12:00 PM - 01:00 PM", "02:00 PM - 03:00 PM", "03:00 PM - 04:00 PM", "04:00 PM - 05:00 PM", "05:00 PM - 06:00 PM"]
+
+        with tab_ap1:
+            col_a1, col_a2 = st.columns(2)
+            with col_a1:
+                ap_name = st.text_input("🧒 बच्चे/मरीज का नाम:")
+                ap_mobile = st.text_input("📞 मोबाइल नंबर:", max_chars=10)
+                if selected_center == "HR_Admin":
+                    ap_center = st.selectbox("🎯 सेंटर चुनें:", actual_centers, key="ap_center")
+                else:
+                    ap_center = selected_center
+            with col_a2:
+                ap_date = st.date_input("📆 अपॉइंटमेंट तारीख:", datetime.today(), key="ap_date")
+                ap_slot = st.selectbox("⏰ टाइम स्लॉट चुनें:", time_slots)
+            if st.button("🎯 अपॉइंटमेंट बुक करें"):
+                if not ap_name or not ap_mobile:
+                    st.warning("⚠️ कृपया नाम और मोबाइल नंबर भरें।")
+                elif not is_valid_mobile(ap_mobile):
+                    st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए।")
+                else:
+                    try:
+                        ap_sheet = sh.worksheet("Appointments")
+                    except Exception:
+                        ap_sheet = sh.add_worksheet(title="Appointments", rows="1000", cols="8")
+                        ap_sheet.update(range_name="A1:H1", values=[["ID", "Token", "Name", "Mobile", "Center", "Date", "Time Slot", "Status"]])
+                    all_ap_rows = ap_sheet.get_all_values()
+                    existing_ap_ids = [int(r[0]) for r in all_ap_rows[1:] if r and str(r[0]).strip().isdigit()]
+                    next_ap_id = max(existing_ap_ids) + 1 if existing_ap_ids else 1
+                    ap_date_str = ap_date.strftime('%Y-%m-%d')
+                    same_day_tokens = [int(r[1]) for r in all_ap_rows[1:] if len(r) >= 6 and str(r[4]).strip() == ap_center and str(r[5]).strip() == ap_date_str and str(r[1]).strip().isdigit()]
+                    next_token = max(same_day_tokens) + 1 if same_day_tokens else 1
+                    ap_sheet.append_row([next_ap_id, next_token, ap_name, str(ap_mobile), ap_center, ap_date_str, ap_slot, "Booked"])
+                    log_audit(selected_center, "Book Appointment", f"{ap_name} ({ap_center}) - {ap_date_str} {ap_slot}, Token #{next_token}")
+                    st.cache_data.clear()
+                    st.success(f"🎉 अपॉइंटमेंट बुक हो गई! आपका टोकन नंबर है: #{next_token}")
+                    st.rerun()
+
+        with tab_ap2:
+            appointments_df = load_cloud_data_fast("Appointments")
+            if admin_view == "सभी सेंटर्स (All Centers)":
+                today_ap = appointments_df[appointments_df['Date'] == today_date] if not appointments_df.empty else pd.DataFrame()
+            else:
+                today_ap = appointments_df[(appointments_df['Center'] == admin_view) & (appointments_df['Date'] == today_date)] if not appointments_df.empty else pd.DataFrame()
+
+            if today_ap.empty:
+                st.info("💡 आज के लिए कोई अपॉइंटमेंट बुक नहीं है।")
+            else:
+                today_ap = today_ap.copy()
+                today_ap['Token'] = pd.to_numeric(today_ap['Token'], errors='coerce')
+                today_ap = today_ap.sort_values('Token')
+                st.dataframe(today_ap[['Token', 'Name', 'Mobile', 'Time Slot', 'Status', 'Center']].reset_index(drop=True), use_container_width=True)
+
+                st.markdown("---")
+                st.subheader("✅ स्टेटस अपडेट करें")
+                ap_status_options = {f"Token #{int(r['Token'])} - {r['Name']} ({r['Time Slot']})": r['ID'] for _, r in today_ap.iterrows()}
+                ap_selected_label = st.selectbox("अपॉइंटमेंट चुनें:", list(ap_status_options.keys()), key="ap_status_select")
+                new_ap_status = st.selectbox("नया स्टेटस:", ["Booked", "Completed", "Cancelled", "No Show"], key="ap_new_status")
+                if st.button("💾 स्टेटस अपडेट करें"):
+                    ap_sheet = sh.worksheet("Appointments")
+                    all_ap_rows = ap_sheet.get_all_values()
+                    target_ap_id = str(ap_status_options[ap_selected_label])
+                    row_to_update = next((idx + 2 for idx, r in enumerate(all_ap_rows[1:]) if r and str(r[0]).strip() == target_ap_id), None)
+                    if row_to_update:
+                        ap_sheet.update_cell(row_to_update, 8, new_ap_status)
+                        log_audit(selected_center, "Update Appointment Status", f"{ap_selected_label} -> {new_ap_status}")
+                        st.cache_data.clear()
+                        st.success("✅ स्टेटस अपडेट हो गया!")
+                        st.rerun()
+
 else:
     st.info("🔒 कृपया डेटा एक्सेस करने के लिए पासवर्ड डालकर 'Login' बटन पर क्लिक करें।")
