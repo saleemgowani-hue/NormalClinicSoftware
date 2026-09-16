@@ -787,7 +787,19 @@ if st.session_state['logged_in']:
             center_staff = staff_df[staff_df['Center'] == admin_view] if not staff_df.empty else pd.DataFrame()
             filtered_patients = patients_df[(patients_df['Center'] == admin_view) & (patients_df['Date'] == today_date)] if not patients_df.empty else pd.DataFrame()
 
-        total_fees_collected = filtered_patients['Fees'].sum() if not filtered_patients.empty and 'Fees' in filtered_patients.columns else 0
+        consultations_df = load_cloud_data_fast("Consultations")
+        if admin_view == "सभी सेंटर्स (All Centers)":
+            center_consultations_all = consultations_df if not consultations_df.empty else pd.DataFrame()
+        else:
+            center_consultations_all = consultations_df[consultations_df['Center'] == admin_view] if not consultations_df.empty else pd.DataFrame()
+
+        def _consultation_fees_for(df_subset):
+            if df_subset is None or df_subset.empty or 'Total Fees' not in df_subset.columns:
+                return 0
+            return df_subset['Total Fees'].sum()
+
+        today_consultations = center_consultations_all[center_consultations_all['Date'] == today_date] if not center_consultations_all.empty else pd.DataFrame()
+        total_fees_collected = (filtered_patients['Fees'].sum() if not filtered_patients.empty and 'Fees' in filtered_patients.columns else 0) + _consultation_fees_for(today_consultations)
 
         col1, col2, col3 = st.columns(3)
         with col1: st.markdown(f'<div class="metric-card"><div class="metric-title">👥 कुल एक्टिव स्टाफ</div><div class="metric-value">{len(center_staff)}</div></div>', unsafe_allow_html=True)
@@ -804,7 +816,8 @@ if st.session_state['logged_in']:
             center_patients_all = patients_df[patients_df['Center'] == admin_view] if not patients_df.empty else pd.DataFrame()
 
         month_patients_df = center_patients_all[center_patients_all['Date'].astype(str).str.startswith(this_month_str)] if not center_patients_all.empty else pd.DataFrame()
-        month_collection = month_patients_df['Fees'].sum() if not month_patients_df.empty and 'Fees' in month_patients_df.columns else 0
+        month_consultations_df = center_consultations_all[center_consultations_all['Date'].astype(str).str.startswith(this_month_str)] if not center_consultations_all.empty else pd.DataFrame()
+        month_collection = (month_patients_df['Fees'].sum() if not month_patients_df.empty and 'Fees' in month_patients_df.columns else 0) + _consultation_fees_for(month_consultations_df)
 
         att_today = pd.DataFrame()
         if not attendance_df.empty and 'Date' in attendance_df.columns:
@@ -831,10 +844,13 @@ if st.session_state['logged_in']:
         # --- 🔔 अलर्ट: कम कलेक्शन / कम हाजिरी ---
         alert_last_7_dates = [(datetime.today() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(1, 8)]
         avg_recent_collection = 0
+        recent_patient_sum = 0
         if not center_patients_all.empty:
             recent_alert_df = center_patients_all[center_patients_all['Date'].isin(alert_last_7_dates)]
             if not recent_alert_df.empty:
-                avg_recent_collection = recent_alert_df['Fees'].sum() / 7
+                recent_patient_sum = recent_alert_df['Fees'].sum()
+        recent_consult_alert_df = center_consultations_all[center_consultations_all['Date'].isin(alert_last_7_dates)] if not center_consultations_all.empty else pd.DataFrame()
+        avg_recent_collection = (recent_patient_sum + _consultation_fees_for(recent_consult_alert_df)) / 7
         if datetime.now().hour >= 14 and avg_recent_collection > 0 and total_fees_collected < avg_recent_collection * 0.5:
             st.warning(f"⚠️ आज का कलेक्शन (₹{int(total_fees_collected)}) पिछले 7 दिनों की औसत (₹{int(avg_recent_collection)}/दिन) से काफी कम है — ध्यान दें।")
         if total_marked > 0 and attendance_pct < 70:
@@ -849,6 +865,8 @@ if st.session_state['logged_in']:
                     c_staff_count = len(staff_df[staff_df['Center'] == c]) if not staff_df.empty else 0
                     c_today_patients = patients_df[(patients_df['Center'] == c) & (patients_df['Date'] == today_date)] if not patients_df.empty else pd.DataFrame()
                     c_today_fees = c_today_patients['Fees'].sum() if not c_today_patients.empty and 'Fees' in c_today_patients.columns else 0
+                    c_today_consultations = consultations_df[(consultations_df['Center'] == c) & (consultations_df['Date'] == today_date)] if not consultations_df.empty else pd.DataFrame()
+                    c_today_fees += _consultation_fees_for(c_today_consultations)
                     comparison_rows.append({"सेंटर": c, "स्टाफ": c_staff_count, "आज के मरीज": len(c_today_patients), "आज की फीस (₹)": int(c_today_fees)})
                 st.dataframe(pd.DataFrame(comparison_rows), use_container_width=True, hide_index=True)
 
@@ -870,6 +888,11 @@ if st.session_state['logged_in']:
         else:
             trend_fees = pd.Series([0] * 7, index=last_7_dates)
             trend_counts = pd.Series([0] * 7, index=last_7_dates)
+
+        if not center_consultations_all.empty and 'Date' in center_consultations_all.columns and 'Total Fees' in center_consultations_all.columns:
+            trend_consult_source = center_consultations_all[center_consultations_all['Date'].isin(last_7_dates)]
+            trend_consult_fees = trend_consult_source.groupby('Date')['Total Fees'].sum().reindex(last_7_dates, fill_value=0)
+            trend_fees = trend_fees.add(trend_consult_fees, fill_value=0)
 
         with st.container(border=True):
             col_t1, col_t2 = st.columns(2)
@@ -1803,19 +1826,23 @@ if st.session_state['logged_in']:
             rev_period = st.selectbox("📅 अवधि चुनें:", ["इस महीने (This Month)", "शुरू से अब तक (All Time)"], key="rev_exp_period")
             rev_patients_df = load_cloud_data_fast("Patients")
             rev_expenses_df = load_cloud_data_fast("Expenses")
+            rev_consultations_df = load_cloud_data_fast("Consultations")
 
             if admin_view == "सभी सेंटर्स (All Centers)":
                 rev_p_df = rev_patients_df
                 rev_e_df = rev_expenses_df
+                rev_c_df = rev_consultations_df
             else:
                 rev_p_df = rev_patients_df[rev_patients_df['Center'] == admin_view] if not rev_patients_df.empty else pd.DataFrame()
                 rev_e_df = rev_expenses_df[rev_expenses_df['Center'] == admin_view] if not rev_expenses_df.empty and 'Center' in rev_expenses_df.columns else pd.DataFrame()
+                rev_c_df = rev_consultations_df[rev_consultations_df['Center'] == admin_view] if not rev_consultations_df.empty else pd.DataFrame()
 
             if rev_period == "इस महीने (This Month)":
                 if not rev_p_df.empty: rev_p_df = rev_p_df[rev_p_df['Date'].astype(str).str.startswith(today_date[:7])]
                 if not rev_e_df.empty: rev_e_df = rev_e_df[rev_e_df['Date'].astype(str).str.startswith(today_date[:7])]
+                if not rev_c_df.empty: rev_c_df = rev_c_df[rev_c_df['Date'].astype(str).str.startswith(today_date[:7])]
 
-            total_revenue = rev_p_df['Fees'].sum() if not rev_p_df.empty and 'Fees' in rev_p_df.columns else 0
+            total_revenue = (rev_p_df['Fees'].sum() if not rev_p_df.empty and 'Fees' in rev_p_df.columns else 0) + (rev_c_df['Total Fees'].sum() if not rev_c_df.empty and 'Total Fees' in rev_c_df.columns else 0)
             total_expense = rev_e_df['Amount'].sum() if not rev_e_df.empty and 'Amount' in rev_e_df.columns else 0
             net_profit = total_revenue - total_expense
 
@@ -1832,9 +1859,11 @@ if st.session_state['logged_in']:
             months_back = [(datetime.today().replace(day=1) - timedelta(days=30 * i)).strftime('%Y-%m') for i in range(5, -1, -1)]
             all_p_for_trend = rev_patients_df if admin_view == "सभी सेंटर्स (All Centers)" else (rev_patients_df[rev_patients_df['Center'] == admin_view] if not rev_patients_df.empty else pd.DataFrame())
             all_e_for_trend = rev_expenses_df if admin_view == "सभी सेंटर्स (All Centers)" else (rev_expenses_df[rev_expenses_df['Center'] == admin_view] if not rev_expenses_df.empty and 'Center' in rev_expenses_df.columns else pd.DataFrame())
+            all_c_for_trend = rev_consultations_df if admin_view == "सभी सेंटर्स (All Centers)" else (rev_consultations_df[rev_consultations_df['Center'] == admin_view] if not rev_consultations_df.empty else pd.DataFrame())
             monthly_rows = []
             for m in months_back:
                 m_rev = all_p_for_trend[all_p_for_trend['Date'].astype(str).str.startswith(m)]['Fees'].sum() if not all_p_for_trend.empty else 0
+                m_rev += all_c_for_trend[all_c_for_trend['Date'].astype(str).str.startswith(m)]['Total Fees'].sum() if not all_c_for_trend.empty and 'Total Fees' in all_c_for_trend.columns else 0
                 m_exp = all_e_for_trend[all_e_for_trend['Date'].astype(str).str.startswith(m)]['Amount'].sum() if not all_e_for_trend.empty else 0
                 monthly_rows.append({"महीना": m, "रेवेन्यू": int(m_rev), "खर्च": int(m_exp)})
             monthly_comp_df = pd.DataFrame(monthly_rows).set_index("महीना")
