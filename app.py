@@ -99,6 +99,53 @@ def generate_table_pdf(title, df, columns):
         pdf.ln()
     return bytes(pdf.output())
 
+def generate_prescription_pdf(data):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "Normal Child Clinic - Prescription", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 11)
+    pdf.ln(4)
+    header_fields = [
+        ("Date", str(data.get('Date', ''))),
+        ("Center", _pdf_safe(data.get('Center', ''))),
+        ("Doctor", _pdf_safe(data.get('Doctor', ''))),
+        ("Patient", _pdf_safe(data.get('Child Name', ''))),
+        ("Parent", _pdf_safe(data.get('Parent Name', ''))),
+        ("Mobile", str(data.get('Mobile', ''))),
+        ("Weight (kg)", str(data.get('Weight (kg)', '')) if data.get('Weight (kg)') else "-"),
+    ]
+    for label, value in header_fields:
+        pdf.cell(45, 7, f"{label}:", border=0)
+        pdf.cell(0, 7, value, ln=True)
+    pdf.ln(4)
+
+    def section(title, content):
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, title, ln=True)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.multi_cell(0, 6, _pdf_safe(content) if content else "-")
+        pdf.ln(2)
+
+    section("Chief Complaint / Diagnosis:", data.get('Chief Complaint', ''))
+    section("Prescription:", data.get('Prescription', ''))
+    section("Medicine Given:", data.get('Medicine Given', ''))
+    if data.get('Notes'):
+        section("Notes:", data.get('Notes', ''))
+
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, "Charges", ln=True)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, f"Consultation Charges: Rs. {int(data.get('Consultation Charges', 0) or 0)}", ln=True)
+    pdf.cell(0, 6, f"Medicine Charges: Rs. {int(data.get('Medicine Charges', 0) or 0)}", ln=True)
+    pdf.cell(0, 6, f"Total Fees Collected: Rs. {int(data.get('Total Fees', 0) or 0)}", ln=True)
+    if data.get('Next Follow-up Date'):
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(0, 6, f"Next Follow-up: {data.get('Next Follow-up Date', '')}", ln=True)
+
+    return bytes(pdf.output())
+
 # --- 📲 WhatsApp मैसेज हेल्पर ---
 def _clean_whatsapp_number(mobile):
     digits = ''.join(ch for ch in str(mobile) if ch.isdigit())
@@ -373,6 +420,12 @@ def load_cloud_data_fast(sheet_name):
         if sheet_name == "Expenses" and 'Amount' in df.columns:
             df['Amount'] = df['Amount'].astype(str).str.replace('₹', '', regex=False).str.replace(',', '', regex=False).str.strip()
             df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0).astype(int)
+        if sheet_name == "Consultations":
+            if 'Weight (kg)' in df.columns:
+                df['Weight (kg)'] = pd.to_numeric(df['Weight (kg)'], errors='coerce').fillna(0)
+            for numcol in ['Consultation Charges', 'Medicine Charges', 'Total Fees']:
+                if numcol in df.columns:
+                    df[numcol] = pd.to_numeric(df[numcol], errors='coerce').fillna(0).astype(int)
         return df
     except Exception as e:
         logger.warning(f"load_cloud_data_fast('{sheet_name}') failed: {e}")
@@ -475,9 +528,9 @@ def sync_monthly_attendance_to_sheet(sh, summary_df, month_year, center_filter):
 
 # --- 👤 रोल-वाइज मेनू एक्सेस (स्टाफ लॉगिन के लिए) ---
 ROLE_MENU_ACCESS = {
-    "Homeopathic Doctor": ["🏠 डैशबोर्ड (Dashboard)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "📊 रिपोर्ट सेंटर (Advanced Reports)"],
+    "Homeopathic Doctor": ["🏠 डैशबोर्ड (Dashboard)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "🩺 परामर्श (Consultation)", "📊 रिपोर्ट सेंटर (Advanced Reports)"],
     "Receptionist": ["🏠 डैशबोर्ड (Dashboard)", "📅 दैनिक हाजिरी (Attendance)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "🎫 अपॉइंटमेंट (Appointments)"],
-    "Pharmacist (Medicine Maker)": ["🏠 डैशबोर्ड (Dashboard)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)"],
+    "Pharmacist (Medicine Maker)": ["🏠 डैशबोर्ड (Dashboard)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "🩺 परामर्श (Consultation)"],
     "Maid / Housekeeping": ["🏠 डैशबोर्ड (Dashboard)"],
 }
 
@@ -701,7 +754,7 @@ if st.session_state['logged_in']:
     else:
         admin_view = selected_center
 
-    menu_options = ["🏠 डैशबोर्ड (Dashboard)", "👥 स्टाफ मैनेजमेंट (HR & Staff)", "📅 दैनिक हाजिरी (Attendance)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "📊 रिपोर्ट सेंटर (Advanced Reports)", "💰 फाइनेंस (Finance)", "🎫 अपॉइंटमेंट (Appointments)"]
+    menu_options = ["🏠 डैशबोर्ड (Dashboard)", "👥 स्टाफ मैनेजमेंट (HR & Staff)", "📅 दैनिक हाजिरी (Attendance)", "🧒 मरीज रजिस्ट्रेशन (Patient Entry)", "🩺 परामर्श (Consultation)", "📊 रिपोर्ट सेंटर (Advanced Reports)", "💰 फाइनेंस (Finance)", "🎫 अपॉइंटमेंट (Appointments)"]
     if selected_center == "HR_Admin": menu_options.append("🔑 पासवर्ड व क्लिनिक मैनेजर")
 
     if st.session_state.get('login_mode') == 'staff' and st.session_state.get('staff_user'):
@@ -1786,6 +1839,154 @@ if st.session_state['logged_in']:
                 monthly_rows.append({"महीना": m, "रेवेन्यू": int(m_rev), "खर्च": int(m_exp)})
             monthly_comp_df = pd.DataFrame(monthly_rows).set_index("महीना")
             st.line_chart(monthly_comp_df)
+
+    elif menu == "🩺 परामर्श (Consultation)":
+        st.markdown("<h2>🩺 परामर्श / कंसल्टेशन</h2>", unsafe_allow_html=True)
+        tab_c1, tab_c2 = st.tabs(["➕ नया परामर्श जोड़ें", "📜 परामर्श इतिहास"])
+
+        with tab_c1:
+            if st.session_state.get('last_consultation'):
+                lc = st.session_state['last_consultation']
+                st.success(f"🎉 {lc['Child Name']} का परामर्श सुरक्षित हो गया है ({lc['Date']})!")
+                st.download_button(
+                    "📥 प्रिस्क्रिप्शन PDF डाउनलोड करें",
+                    data=generate_prescription_pdf(lc),
+                    file_name=f"Prescription_{lc['ID']}.pdf",
+                    mime="application/pdf",
+                    key="prescription_pdf_download",
+                )
+                st.markdown("---")
+
+            if selected_center == "HR_Admin":
+                cons_center = st.selectbox("🎯 सेंटर चुनें:", actual_centers, key="cons_center")
+            else:
+                cons_center = selected_center
+
+            cons_patients_df = load_cloud_data_fast("Patients")
+            cons_center_patients = cons_patients_df[cons_patients_df['Center'] == cons_center] if not cons_patients_df.empty else pd.DataFrame()
+            cons_unique_patients = cons_center_patients.drop_duplicates(subset=['Child Name', 'Mobile']) if not cons_center_patients.empty else pd.DataFrame()
+
+            if cons_unique_patients.empty:
+                st.info("इस सेंटर में अभी कोई रजिस्टर्ड मरीज नहीं है। पहले 'मरीज रजिस्ट्रेशन' से मरीज जोड़ें।")
+            else:
+                cons_patient_search = st.text_input("🔍 मरीज खोजें (नाम/मोबाइल):", key="cons_patient_search")
+                cons_search_pool = cons_unique_patients
+                if cons_patient_search:
+                    mask = (
+                        cons_unique_patients['Child Name'].str.contains(cons_patient_search, case=False, na=False)
+                        | cons_unique_patients['Mobile'].str.contains(cons_patient_search, case=False, na=False)
+                    )
+                    cons_search_pool = cons_unique_patients[mask]
+
+                if cons_search_pool.empty:
+                    st.info("💡 खोज से मेल खाता कोई मरीज नहीं मिला।")
+                else:
+                    cons_patient_options = {f"{r['Child Name']} - {r['Mobile']}": (r['Child Name'], r['Parent Name'], r['Mobile']) for _, r in cons_search_pool.iterrows()}
+                    cons_selected_label = st.selectbox("मरीज चुनें:", list(cons_patient_options.keys()), key="cons_patient_select")
+                    cons_child_name, cons_parent_name, cons_mobile = cons_patient_options[cons_selected_label]
+
+                    all_consultations_df = load_cloud_data_fast("Consultations")
+                    patient_history = pd.DataFrame()
+                    if not all_consultations_df.empty and 'Mobile' in all_consultations_df.columns:
+                        patient_history = all_consultations_df[
+                            (all_consultations_df['Mobile'] == cons_mobile) & (all_consultations_df['Child Name'] == cons_child_name)
+                        ].sort_values('Date', ascending=False)
+
+                    with st.expander(f"📜 {cons_child_name} का पिछला परामर्श इतिहास ({len(patient_history)})", expanded=False):
+                        if patient_history.empty:
+                            st.caption("कोई पिछला परामर्श रिकॉर्ड नहीं है।")
+                        else:
+                            hist_cols = [c for c in ['Date', 'Doctor', 'Chief Complaint', 'Prescription', 'Medicine Given', 'Weight (kg)', 'Total Fees', 'Next Follow-up Date'] if c in patient_history.columns]
+                            st.dataframe(patient_history[hist_cols].reset_index(drop=True), use_container_width=True)
+
+                    st.markdown("---")
+                    st.markdown("#### 📝 नया परामर्श विवरण")
+
+                    staff_for_cons = load_cloud_data_fast("Staff")
+                    doctor_list = staff_for_cons[(staff_for_cons['Center'] == cons_center) & (staff_for_cons['Role'] == 'Homeopathic Doctor')]['Name'].tolist() if not staff_for_cons.empty else []
+                    if not doctor_list:
+                        doctor_list = ["N/A (कोई डॉक्टर पंजीकृत नहीं)"]
+
+                    col_c1, col_c2 = st.columns(2)
+                    with col_c1:
+                        cons_date = st.date_input("📆 परामर्श तारीख:", datetime.today(), key="cons_date")
+                        cons_doctor = st.selectbox("🧑‍⚕️ डॉक्टर:", doctor_list, key="cons_doctor")
+                        cons_weight = st.number_input("⚖️ वजन (kg):", min_value=0.0, value=0.0, step=0.1, key="cons_weight")
+                        cons_followup = st.date_input("📅 अगली फॉलो-अप तारीख (वैकल्पिक):", datetime.today() + timedelta(days=15), key="cons_followup")
+                    with col_c2:
+                        cons_consultation_charge = st.number_input("💵 कंसल्टेशन चार्ज (₹):", min_value=0, value=0, step=50, key="cons_consultation_charge")
+                        cons_medicine_charge = st.number_input("💊 मेडिसिन चार्ज (₹):", min_value=0, value=0, step=50, key="cons_medicine_charge")
+                        cons_total_fees = st.number_input(
+                            "🧾 कुल प्राप्त फीस (₹):", min_value=0,
+                            value=cons_consultation_charge + cons_medicine_charge, step=50, key="cons_total_fees",
+                            help="डिफ़ॉल्ट = कंसल्टेशन + मेडिसिन चार्ज, ज़रूरत हो तो बदलें (डिस्काउंट/आंशिक भुगतान)।",
+                        )
+
+                    cons_complaint = st.text_area("🩺 मुख्य शिकायत / निदान (Chief Complaint / Diagnosis):", key="cons_complaint")
+                    cons_prescription = st.text_area("📋 प्रिस्क्रिप्शन (दवा व सलाह):", key="cons_prescription")
+                    cons_medicine_given = st.text_area("💊 दी गई दवा (Medicine Given):", key="cons_medicine_given")
+                    cons_notes = st.text_area("📝 अतिरिक्त नोट्स (वैकल्पिक):", key="cons_notes")
+
+                    if st.button("💾 परामर्श सुरक्षित करें"):
+                        try:
+                            cons_sheet = sh.worksheet("Consultations")
+                        except Exception:
+                            cons_sheet = sh.add_worksheet(title="Consultations", rows="2000", cols="16")
+                            cons_sheet.update(range_name="A1:P1", values=[[
+                                "ID", "Date", "Center", "Doctor", "Child Name", "Parent Name", "Mobile",
+                                "Chief Complaint", "Prescription", "Medicine Given", "Weight (kg)",
+                                "Consultation Charges", "Medicine Charges", "Total Fees", "Next Follow-up Date", "Notes"
+                            ]])
+                        all_cons_rows = cons_sheet.get_all_values()
+                        existing_cons_ids = [int(r[0]) for r in all_cons_rows[1:] if r and str(r[0]).strip().isdigit()]
+                        next_cons_id = max(existing_cons_ids) + 1 if existing_cons_ids else 1
+                        cons_date_str = cons_date.strftime('%Y-%m-%d')
+                        cons_followup_str = cons_followup.strftime('%Y-%m-%d')
+                        cons_sheet.append_row([
+                            next_cons_id, cons_date_str, cons_center, cons_doctor, cons_child_name, cons_parent_name, cons_mobile,
+                            cons_complaint, cons_prescription, cons_medicine_given, cons_weight,
+                            int(cons_consultation_charge), int(cons_medicine_charge), int(cons_total_fees), cons_followup_str, cons_notes,
+                        ])
+                        log_audit(current_actor(), "Add Consultation", f"{cons_child_name} ({cons_center}) by {cons_doctor} on {cons_date_str}")
+                        st.session_state['last_consultation'] = {
+                            'ID': next_cons_id, 'Date': cons_date_str, 'Center': cons_center, 'Doctor': cons_doctor,
+                            'Child Name': cons_child_name, 'Parent Name': cons_parent_name, 'Mobile': cons_mobile,
+                            'Chief Complaint': cons_complaint, 'Prescription': cons_prescription, 'Medicine Given': cons_medicine_given,
+                            'Weight (kg)': cons_weight, 'Consultation Charges': int(cons_consultation_charge),
+                            'Medicine Charges': int(cons_medicine_charge), 'Total Fees': int(cons_total_fees),
+                            'Next Follow-up Date': cons_followup_str, 'Notes': cons_notes,
+                        }
+                        st.cache_data.clear()
+                        st.rerun()
+
+        with tab_c2:
+            hist_consultations_df = load_cloud_data_fast("Consultations")
+            if admin_view == "सभी सेंटर्स (All Centers)":
+                hist_cons_scope = hist_consultations_df
+            else:
+                hist_cons_scope = hist_consultations_df[hist_consultations_df['Center'] == admin_view] if not hist_consultations_df.empty else pd.DataFrame()
+
+            if hist_cons_scope.empty:
+                st.info("कोई परामर्श रिकॉर्ड उपलब्ध नहीं है।")
+            else:
+                cons_hist_search = st.text_input("🔍 मरीज का नाम या मोबाइल नंबर खोजें:", key="cons_hist_search")
+                filtered_hist = hist_cons_scope
+                if cons_hist_search:
+                    mask = (
+                        hist_cons_scope['Child Name'].str.contains(cons_hist_search, case=False, na=False)
+                        | hist_cons_scope['Mobile'].str.contains(cons_hist_search, case=False, na=False)
+                    )
+                    filtered_hist = hist_cons_scope[mask]
+
+                if filtered_hist.empty:
+                    st.info("💡 खोज से मेल खाता कोई परामर्श नहीं मिला।")
+                else:
+                    filtered_hist = filtered_hist.sort_values('Date', ascending=False)
+                    col_ch1, col_ch2 = st.columns(2)
+                    col_ch1.metric("कुल परामर्श", len(filtered_hist))
+                    col_ch2.metric("कुल कलेक्शन (₹)", f"₹ {int(filtered_hist['Total Fees'].sum())}/-" if 'Total Fees' in filtered_hist.columns else "₹ 0/-")
+                    show_cols = [c for c in ['Date', 'Child Name', 'Parent Name', 'Mobile', 'Doctor', 'Chief Complaint', 'Medicine Given', 'Consultation Charges', 'Medicine Charges', 'Total Fees', 'Next Follow-up Date', 'Center'] if c in filtered_hist.columns]
+                    st.dataframe(filtered_hist[show_cols].reset_index(drop=True), use_container_width=True)
 
     elif menu == "🎫 अपॉइंटमेंट (Appointments)":
         st.markdown("<h2>🎫 अपॉइंटमेंट / टोकन बुकिंग</h2>", unsafe_allow_html=True)
