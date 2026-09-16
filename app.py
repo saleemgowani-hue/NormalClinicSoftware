@@ -9,6 +9,9 @@ import hmac
 import secrets
 import logging
 import calendar
+import io
+import pyotp
+import qrcode
 from fpdf import FPDF
 
 logging.basicConfig(level=logging.WARNING)
@@ -355,6 +358,32 @@ def current_actor():
         return f"{u['Full Name']} ({u['Role']}, {u['Center']})"
     return selected_center
 
+# --- 🔐 HR_Admin के लिए 2FA (TOTP) हेल्पर्स ---
+def get_totp_secret(center_name):
+    try:
+        pwd_sheet = sh.worksheet("Passwords")
+        records = pwd_sheet.get_all_records()
+        for r in records:
+            if r.get('Center') == center_name:
+                return str(r.get('TOTP_Secret', '')).strip()
+    except Exception:
+        pass
+    return ''
+
+def set_totp_secret(center_name, secret):
+    try:
+        pwd_sheet = sh.worksheet("Passwords")
+        headers = pwd_sheet.row_values(1)
+        if len(headers) < 3 or headers[2].strip() != 'TOTP_Secret':
+            pwd_sheet.update(range_name="C1", values=[["TOTP_Secret"]])
+        records = pwd_sheet.get_all_records()
+        row_idx = next((idx + 2 for idx, r in enumerate(records) if r.get('Center') == center_name), None)
+        if row_idx:
+            pwd_sheet.update(range_name=f"C{row_idx}", values=[[secret]])
+        st.cache_data.clear()
+    except Exception as e:
+        logger.warning(f"set_totp_secret failed: {e}")
+
 # --- 🔑 लाइव पासवर्ड मैनेजर ---
 @st.cache_data(ttl=5)
 def get_live_passwords():
@@ -409,6 +438,8 @@ if 'lockout_until' not in st.session_state:
 if st.session_state['current_identity'] != current_identity:
     st.session_state['logged_in'] = False
     st.session_state['staff_user'] = None
+    st.session_state['awaiting_totp'] = False
+    st.session_state['pending_totp_secret'] = None
     st.session_state['current_identity'] = current_identity
 
 MAX_LOGIN_ATTEMPTS = 5
@@ -454,9 +485,18 @@ if locked_out:
     st.sidebar.error(f"🔒 बहुत ज़्यादा गलत प्रयास। कृपया {remaining} सेकंड बाद कोशिश करें।")
 elif st.sidebar.button("🚀 Login"):
     login_success = False
+    requires_totp = False
     if login_mode == "🏢 सेंटर लॉगिन":
         if _check_and_migrate(selected_center, input_password) or _check_and_migrate("HR_Admin", input_password):
-            login_success = True
+            if selected_center == "HR_Admin":
+                admin_totp_secret = get_totp_secret("HR_Admin")
+                if admin_totp_secret:
+                    requires_totp = True
+                    st.session_state['pending_totp_secret'] = admin_totp_secret
+                else:
+                    login_success = True
+            else:
+                login_success = True
             st.session_state['login_mode'] = 'center'
             st.session_state['staff_user'] = None
     else:
@@ -466,8 +506,12 @@ elif st.sidebar.button("🚀 Login"):
             st.session_state['login_mode'] = 'staff'
             st.session_state['staff_user'] = matched_user
 
-    if login_success:
+    if requires_totp:
+        st.session_state['awaiting_totp'] = True
+        st.session_state['logged_in'] = False
+    elif login_success:
         st.session_state['logged_in'] = True
+        st.session_state['awaiting_totp'] = False
         st.session_state['login_attempts'] = 0
         st.session_state['lockout_until'] = None
     else:
@@ -479,6 +523,19 @@ elif st.sidebar.button("🚀 Login"):
         else:
             left = MAX_LOGIN_ATTEMPTS - st.session_state['login_attempts']
             st.sidebar.error(f"❌ गलत यूज़रनेम/पासवर्ड! ({left} प्रयास शेष)")
+
+if st.session_state.get('awaiting_totp') and not st.session_state.get('logged_in'):
+    otp_code = st.sidebar.text_input("🔐 Authenticator ऐप का 6-अंकों कोड डालें:", max_chars=6, key="totp_code_input")
+    if st.sidebar.button("✅ OTP वेरिफाई करें"):
+        totp_obj = pyotp.TOTP(st.session_state.get('pending_totp_secret', ''))
+        if otp_code and totp_obj.verify(otp_code, valid_window=1):
+            st.session_state['logged_in'] = True
+            st.session_state['awaiting_totp'] = False
+            st.session_state['login_attempts'] = 0
+            st.session_state['lockout_until'] = None
+            st.rerun()
+        else:
+            st.sidebar.error("❌ गलत OTP कोड!")
 
 if st.session_state.get('logged_in') and st.session_state.get('login_mode') == 'staff' and st.session_state.get('staff_user'):
     selected_center = st.session_state['staff_user']['Center']
@@ -493,6 +550,8 @@ if st.session_state['logged_in']:
     if st.sidebar.button("🚪 Logout"):
         st.session_state['logged_in'] = False
         st.session_state['staff_user'] = None
+        st.session_state['awaiting_totp'] = False
+        st.session_state['pending_totp_secret'] = None
         st.rerun()
 
     if selected_center == "HR_Admin":
@@ -1353,6 +1412,37 @@ if st.session_state['logged_in']:
                     st.cache_data.clear()
                     st.success("🎉 पासवर्ड अपडेट हो गया!")
                     st.rerun()
+
+            st.markdown("---")
+            st.subheader("🔐 दो-चरणीय सुरक्षा (2FA) — सिर्फ HR_Admin लॉगिन के लिए")
+            current_totp_secret = get_totp_secret("HR_Admin")
+            if current_totp_secret:
+                st.success("✅ 2FA अभी सक्रिय है — HR_Admin के तौर पर लॉगिन करने के लिए पासवर्ड के बाद Authenticator ऐप का कोड भी माँगा जाएगा।")
+                if st.button("🗑️ 2FA बंद करें (Disable 2FA)"):
+                    set_totp_secret("HR_Admin", "")
+                    log_audit(current_actor(), "Disable 2FA", "HR_Admin")
+                    st.success("2FA बंद कर दिया गया है।")
+                    st.rerun()
+            else:
+                st.info("2FA अभी सक्रिय नहीं है। नीचे QR कोड को Google Authenticator/Authy ऐप से स्कैन करके सेटअप करें।")
+                if 'new_totp_secret' not in st.session_state:
+                    st.session_state['new_totp_secret'] = pyotp.random_base32()
+                setup_secret = st.session_state['new_totp_secret']
+                totp_uri = pyotp.TOTP(setup_secret).provisioning_uri(name="HR_Admin", issuer_name="Normal Child Clinic")
+                qr_buf = io.BytesIO()
+                qrcode.make(totp_uri).save(qr_buf, format="PNG")
+                st.image(qr_buf.getvalue(), caption="Authenticator ऐप से स्कैन करें", width=200)
+                st.code(setup_secret, language=None)
+                confirm_otp = st.text_input("ऊपर स्कैन करने के बाद ऐप में दिखने वाला 6-अंकों कोड डालें:", key="confirm_totp_setup", max_chars=6)
+                if st.button("✅ 2FA एक्टिवेट करें"):
+                    if confirm_otp and pyotp.TOTP(setup_secret).verify(confirm_otp, valid_window=1):
+                        set_totp_secret("HR_Admin", setup_secret)
+                        del st.session_state['new_totp_secret']
+                        log_audit(current_actor(), "Enable 2FA", "HR_Admin")
+                        st.success("🎉 2FA सफलतापूर्वक एक्टिवेट हो गया है!")
+                        st.rerun()
+                    else:
+                        st.error("❌ गलत कोड, दोबारा कोशिश करें।")
 
         with tab_center:
             st.subheader("➕ नया सेंटर जोड़ें")

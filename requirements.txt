@@ -7,3 +7,4 @@ oauth2client
 fpdf2
 pyotp
 qrcode
+Pillow
