@@ -912,26 +912,26 @@ if st.session_state['logged_in']:
                     st.bar_chart(cond_counts, color="#7b2cbf")
 
     elif menu == "👥 स्टाफ मैनेजमेंट (HR & Staff)":
-        st.markdown("<h2>👥 स्टाफ मैनेजमेंट पोर्टल</h2>", unsafe_allow_html=True)
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["➕ नया कर्मचारी जोड़ें", "📋 वर्तमान स्टाफ सूची देखें", "✏️ स्टाफ एडिट करें", "🧾 सैलरी स्लिप", "🌴 लीव मैनेजमेंट"])
+        st.markdown("<h2>👥 स्टाफ मैनेजमेंट पोर्टल (Staff Management Portal)</h2>", unsafe_allow_html=True)
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["➕ नया कर्मचारी जोड़ें (Add Staff)", "📋 वर्तमान स्टाफ सूची (Staff List)", "✏️ स्टाफ एडिट करें (Edit Staff)", "🧾 सैलरी स्लिप (Salary Slip)", "🌴 लीव मैनेजमेंट (Leave Management)"])
         staff_df = load_cloud_data_fast("Staff")
         with tab1:
             col_s1, col_s2 = st.columns(2)
             with col_s1:
-                s_name = st.text_input("कर्मचारी का पूरा नाम:")
-                s_role = st.selectbox("पद:", ["Homeopathic Doctor", "Pharmacist (Medicine Maker)", "Receptionist", "Maid / Housekeeping"])
+                s_name = st.text_input("कर्मचारी का पूरा नाम (Full Name):")
+                s_role = st.selectbox("पद (Role):", ["Homeopathic Doctor", "Pharmacist (Medicine Maker)", "Receptionist", "Maid / Housekeeping"])
                 if selected_center == "HR_Admin":
-                    s_target_center = st.selectbox("🎯 किस सेंटर के लिए जोड़ना है?:", actual_centers)
+                    s_target_center = st.selectbox("🎯 किस सेंटर के लिए जोड़ना है? (Which Center?):", actual_centers)
                 else:
                     s_target_center = selected_center
             with col_s2:
-                s_mobile = st.text_input("📞 मोबाइल नंबर:", max_chars=10)
-                s_salary = st.number_input("💵 मासिक सैलरी (₹):", min_value=0, value=0, step=1000)
-            if st.button("🚀 क्लाउड पर सेव करें"):
+                s_mobile = st.text_input("📞 मोबाइल नंबर (Mobile Number):", max_chars=10)
+                s_salary = st.number_input("💵 मासिक सैलरी (Monthly Salary) (₹):", min_value=0, value=0, step=1000)
+            if st.button("🚀 क्लाउड पर सेव करें (Save)"):
                 if not s_name or not s_mobile:
-                    st.warning("⚠️ कृपया नाम और मोबाइल नंबर दोनों भरें।")
+                    st.warning("⚠️ कृपया नाम और मोबाइल नंबर दोनों भरें। (Please fill both name and mobile number.)")
                 elif not is_valid_mobile(s_mobile):
-                    st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए।")
+                    st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए। (Mobile number must be 10 digits.)")
                 else:
                     if not staff_df.empty and 'ID' in staff_df.columns:
                         existing_s_ids = pd.to_numeric(staff_df['ID'], errors='coerce').dropna()
@@ -941,7 +941,7 @@ if st.session_state['logged_in']:
                     sh.worksheet("Staff").append_row([next_s_id, s_name, s_role, str(s_mobile), s_target_center, int(s_salary)])
                     log_audit(current_actor(), "Add Staff", f"{s_name} ({s_role}) added to {s_target_center}, ID {next_s_id}")
                     st.cache_data.clear()
-                    st.success(f"🎉 {s_name} को सफलतापूर्वक {s_target_center} सेंटर में जोड़ दिया गया है!")
+                    st.success(f"🎉 {s_name} को सफलतापूर्वक {s_target_center} सेंटर में जोड़ दिया गया है! (Added successfully!)")
                     st.rerun()
         with tab2:
             if admin_view == "सभी सेंटर्स (All Centers)":
@@ -949,7 +949,7 @@ if st.session_state['logged_in']:
             else:
                 view_staff_df = staff_df[staff_df['Center'] == admin_view] if not staff_df.empty else pd.DataFrame()
 
-            staff_search = st.text_input("🔍 नाम या मोबाइल नंबर से खोजें:", key="staff_search")
+            staff_search = st.text_input("🔍 नाम या मोबाइल नंबर से खोजें (Search by Name/Mobile):", key="staff_search")
             if staff_search and not view_staff_df.empty:
                 mask = view_staff_df['Name'].str.contains(staff_search, case=False, na=False) | view_staff_df['Mobile'].str.contains(staff_search, case=False, na=False)
                 view_staff_df = view_staff_df[mask]
@@ -957,14 +957,14 @@ if st.session_state['logged_in']:
             if not view_staff_df.empty:
                 st.dataframe(view_staff_df[['ID', 'Name', 'Role', 'Mobile', 'Salary', 'Center']].reset_index(drop=True), use_container_width=True)
             else:
-                st.info("इस फ़िल्टर पर अभी कोई स्टाफ डेटा नहीं है।")
+                st.info("इस फ़िल्टर पर अभी कोई स्टाफ डेटा नहीं है। (No staff data for this filter.)")
 
             if not view_staff_df.empty:
                 st.markdown("---")
-                st.subheader("🗑️ स्टाफ हटाएं")
+                st.subheader("🗑️ स्टाफ हटाएं (Delete Staff)")
                 del_staff_options = {f"{r['Name']} ({r['Role']}, {r['Center']}) - ID {r['ID']}": r['ID'] for _, r in view_staff_df.iterrows()}
-                del_staff_label = st.selectbox("हटाने के लिए स्टाफ चुनें:", list(del_staff_options.keys()), key="del_staff_select")
-                if st.button("❌ स्टाफ डिलीट करें"):
+                del_staff_label = st.selectbox("हटाने के लिए स्टाफ चुनें (Select staff to delete):", list(del_staff_options.keys()), key="del_staff_select")
+                if st.button("❌ स्टाफ डिलीट करें (Delete Staff)"):
                     s_sheet = sh.worksheet("Staff")
                     all_s_rows = s_sheet.get_all_values()
                     target_s_id = str(del_staff_options[del_staff_label])
@@ -973,60 +973,60 @@ if st.session_state['logged_in']:
                         s_sheet.delete_rows(row_to_delete)
                         log_audit(current_actor(), "Delete Staff", f"{del_staff_label}")
                         st.cache_data.clear()
-                        st.success("🗑️ स्टाफ रिकॉर्ड डिलीट हो गया है!")
+                        st.success("🗑️ स्टाफ रिकॉर्ड डिलीट हो गया है! (Staff record deleted!)")
                         st.rerun()
 
         with tab3:
             if staff_df.empty:
-                st.info("कोई स्टाफ डेटा उपलब्ध नहीं है।")
+                st.info("कोई स्टाफ डेटा उपलब्ध नहीं है। (No staff data available.)")
             else:
                 if admin_view == "सभी सेंटर्स (All Centers)":
                     edit_staff_pool = staff_df
                 else:
                     edit_staff_pool = staff_df[staff_df['Center'] == admin_view]
 
-                staff_edit_search = st.text_input("🔍 नाम या मोबाइल नंबर से खोजें:", key="staff_edit_search")
+                staff_edit_search = st.text_input("🔍 नाम या मोबाइल नंबर से खोजें (Search by Name/Mobile):", key="staff_edit_search")
                 if staff_edit_search and not edit_staff_pool.empty:
                     mask = edit_staff_pool['Name'].str.contains(staff_edit_search, case=False, na=False) | edit_staff_pool['Mobile'].str.contains(staff_edit_search, case=False, na=False)
                     edit_staff_pool = edit_staff_pool[mask]
 
                 if edit_staff_pool.empty:
-                    st.info("💡 खोज से मेल खाता कोई स्टाफ नहीं मिला।")
+                    st.info("💡 खोज से मेल खाता कोई स्टाफ नहीं मिला। (No matching staff found.)")
                 else:
                     staff_edit_options = {f"{r['Name']} ({r['Role']}, {r['Center']}) - ID {r['ID']}": r['ID'] for _, r in edit_staff_pool.iterrows()}
-                    selected_staff_label = st.selectbox("एडिट के लिए स्टाफ चुनें:", list(staff_edit_options.keys()), key="staff_edit_select")
+                    selected_staff_label = st.selectbox("एडिट के लिए स्टाफ चुनें (Select staff to edit):", list(staff_edit_options.keys()), key="staff_edit_select")
                     s_data = staff_df[staff_df['ID'] == staff_edit_options[selected_staff_label]].iloc[0]
                     real_s_row_idx = staff_df[staff_df['ID'] == staff_edit_options[selected_staff_label]].index[0] + 2
 
                     role_options = ["Homeopathic Doctor", "Pharmacist (Medicine Maker)", "Receptionist", "Maid / Housekeeping"]
                     col_se1, col_se2 = st.columns(2)
                     with col_se1:
-                        edit_s_name = st.text_input("नाम बदलें:", value=str(s_data['Name']))
-                        edit_s_role = st.selectbox("पद बदलें:", role_options, index=role_options.index(s_data['Role']) if s_data['Role'] in role_options else 0)
+                        edit_s_name = st.text_input("नाम बदलें (Change Name):", value=str(s_data['Name']))
+                        edit_s_role = st.selectbox("पद बदलें (Change Role):", role_options, index=role_options.index(s_data['Role']) if s_data['Role'] in role_options else 0)
                         if selected_center == "HR_Admin":
-                            edit_s_center = st.selectbox("सेंटर बदलें:", actual_centers, index=actual_centers.index(s_data['Center']) if s_data['Center'] in actual_centers else 0)
+                            edit_s_center = st.selectbox("सेंटर बदलें (Change Center):", actual_centers, index=actual_centers.index(s_data['Center']) if s_data['Center'] in actual_centers else 0)
                         else:
                             edit_s_center = str(s_data['Center'])
                     with col_se2:
-                        edit_s_mobile = st.text_input("मोबाइल नंबर बदलें:", value=str(s_data['Mobile']), max_chars=10)
+                        edit_s_mobile = st.text_input("मोबाइल नंबर बदलें (Change Mobile):", value=str(s_data['Mobile']), max_chars=10)
                         current_salary = int(s_data['Salary']) if str(s_data['Salary']).strip().isdigit() else 0
-                        edit_s_salary = st.number_input("मासिक सैलरी बदलें (₹):", min_value=0, value=current_salary, step=1000)
+                        edit_s_salary = st.number_input("मासिक सैलरी बदलें (Change Salary) (₹):", min_value=0, value=current_salary, step=1000)
 
-                    if st.button("💾 स्टाफ डेटा अपडेट करें"):
+                    if st.button("💾 स्टाफ डेटा अपडेट करें (Update Staff)"):
                         if not is_valid_mobile(edit_s_mobile):
-                            st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए।")
+                            st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए। (Mobile number must be 10 digits.)")
                         else:
                             s_sheet = sh.worksheet("Staff")
                             s_sheet.update(range_name=f"A{real_s_row_idx}:F{real_s_row_idx}", values=[[int(staff_edit_options[selected_staff_label]), edit_s_name, edit_s_role, str(edit_s_mobile), edit_s_center, int(edit_s_salary)]])
                             log_audit(current_actor(), "Edit Staff", f"ID {staff_edit_options[selected_staff_label]} ({edit_s_name}) updated")
                             st.cache_data.clear()
-                            st.success("📝 स्टाफ रिकॉर्ड सफलतापूर्वक अपडेट हो गया!")
+                            st.success("📝 स्टाफ रिकॉर्ड सफलतापूर्वक अपडेट हो गया! (Staff record updated!)")
                             st.rerun()
 
         with tab4:
-            st.markdown("### 🧾 स्टाफ मासिक सैलरी स्लिप जनरेट करें")
+            st.markdown("### 🧾 स्टाफ मासिक सैलरी स्लिप जनरेट करें (Generate Monthly Salary Slip)")
             if staff_df.empty:
-                st.info("कोई स्टाफ डेटा उपलब्ध नहीं है।")
+                st.info("कोई स्टाफ डेटा उपलब्ध नहीं है। (No staff data available.)")
             else:
                 if admin_view == "सभी सेंटर्स (All Centers)":
                     slip_staff_pool = staff_df
@@ -1034,21 +1034,21 @@ if st.session_state['logged_in']:
                     slip_staff_pool = staff_df[staff_df['Center'] == admin_view]
 
                 if slip_staff_pool.empty:
-                    st.info("इस फ़िल्टर पर कोई स्टाफ नहीं है।")
+                    st.info("इस फ़िल्टर पर कोई स्टाफ नहीं है। (No staff for this filter.)")
                 else:
                     slip_options = {f"{r['Name']} ({r['Role']}, {r['Center']}) - ID {r['ID']}": r['ID'] for _, r in slip_staff_pool.iterrows()}
-                    slip_selected_label = st.selectbox("स्टाफ चुनें:", list(slip_options.keys()), key="slip_staff_select")
+                    slip_selected_label = st.selectbox("स्टाफ चुनें (Select Staff):", list(slip_options.keys()), key="slip_staff_select")
                     slip_staff_row = staff_df[staff_df['ID'] == slip_options[slip_selected_label]].iloc[0]
 
                     col_sl1, col_sl2 = st.columns(2)
                     with col_sl1:
-                        slip_year = st.selectbox("साल चुनें:", [str(y) for y in range(datetime.today().year - 2, datetime.today().year + 2)], index=2, key="slip_year")
+                        slip_year = st.selectbox("साल चुनें (Select Year):", [str(y) for y in range(datetime.today().year - 2, datetime.today().year + 2)], index=2, key="slip_year")
                     with col_sl2:
                         slip_months_list = [("January", 1), ("February", 2), ("March", 3), ("April", 4), ("May", 5), ("June", 6), ("July", 7), ("August", 8), ("September", 9), ("October", 10), ("November", 11), ("December", 12)]
-                        slip_month_label = st.selectbox("महीना चुनें:", [m[0] for m in slip_months_list], index=datetime.today().month - 1, key="slip_month")
+                        slip_month_label = st.selectbox("महीना चुनें (Select Month):", [m[0] for m in slip_months_list], index=datetime.today().month - 1, key="slip_month")
                         slip_month_num = next(m[1] for m in slip_months_list if m[0] == slip_month_label)
 
-                    if st.button("🧾 सैलरी स्लिप जनरेट करें"):
+                    if st.button("🧾 सैलरी स्लिप जनरेट करें (Generate Salary Slip)"):
                         att_for_slip = load_cloud_data_fast("Attendance")
                         target_month_str = f"{slip_year}-{slip_month_num:02d}"
                         s_id_str = str(slip_staff_row['ID']).strip()
@@ -1065,21 +1065,21 @@ if st.session_state['logged_in']:
                             slip_staff_row['Name'], slip_staff_row['Role'], slip_staff_row['Center'],
                             f"{slip_month_label} {slip_year}", monthly_salary, present_days, absent_days, leave_days, total_days_in_month
                         )
-                        st.success(f"✅ {slip_month_label} {slip_year} की सैलरी स्लिप तैयार है — उपस्थित: {present_days}, अनुपस्थित: {absent_days}, अवकाश: {leave_days}")
+                        st.success(f"✅ {slip_month_label} {slip_year} की सैलरी स्लिप तैयार है (Salary slip ready) — उपस्थित (Present): {present_days}, अनुपस्थित (Absent): {absent_days}, अवकाश (Leave): {leave_days}")
                         st.download_button(
-                            "📥 सैलरी स्लिप PDF डाउनलोड करें",
+                            "📥 सैलरी स्लिप PDF डाउनलोड करें (Download PDF)",
                             data=slip_pdf,
                             file_name=f"SalarySlip_{slip_staff_row['Name']}_{target_month_str}.pdf",
                             mime="application/pdf",
                         )
 
         with tab5:
-            st.markdown("### 🌴 लीव एप्लीकेशन व अप्रूवल")
-            leave_tab1, leave_tab2 = st.tabs(["📝 नई लीव एप्लीकेशन", "✅ अप्रूव / रिजेक्ट करें"])
+            st.markdown("### 🌴 लीव एप्लीकेशन व अप्रूवल (Leave Application & Approval)")
+            leave_tab1, leave_tab2 = st.tabs(["📝 नई लीव एप्लीकेशन (New Leave Request)", "✅ अप्रूव / रिजेक्ट करें (Approve/Reject)"])
 
             with leave_tab1:
                 if staff_df.empty:
-                    st.info("कोई स्टाफ डेटा उपलब्ध नहीं है।")
+                    st.info("कोई स्टाफ डेटा उपलब्ध नहीं है। (No staff data available.)")
                 else:
                     if admin_view == "सभी सेंटर्स (All Centers)":
                         leave_staff_pool = staff_df
@@ -1087,22 +1087,22 @@ if st.session_state['logged_in']:
                         leave_staff_pool = staff_df[staff_df['Center'] == admin_view]
 
                     if leave_staff_pool.empty:
-                        st.info("इस फ़िल्टर पर कोई स्टाफ नहीं है।")
+                        st.info("इस फ़िल्टर पर कोई स्टाफ नहीं है। (No staff for this filter.)")
                     else:
                         leave_options = {f"{r['Name']} ({r['Role']}, {r['Center']}) - ID {r['ID']}": r['ID'] for _, r in leave_staff_pool.iterrows()}
-                        leave_selected_label = st.selectbox("स्टाफ चुनें:", list(leave_options.keys()), key="leave_apply_staff")
+                        leave_selected_label = st.selectbox("स्टाफ चुनें (Select Staff):", list(leave_options.keys()), key="leave_apply_staff")
                         leave_staff_row = staff_df[staff_df['ID'] == leave_options[leave_selected_label]].iloc[0]
 
                         col_lv1, col_lv2 = st.columns(2)
                         with col_lv1:
-                            leave_from = st.date_input("लीव शुरू तारीख:", datetime.today(), key="leave_from")
+                            leave_from = st.date_input("लीव शुरू तारीख (Start Date):", datetime.today(), key="leave_from")
                         with col_lv2:
-                            leave_to = st.date_input("लीव खत्म तारीख:", datetime.today(), key="leave_to")
+                            leave_to = st.date_input("लीव खत्म तारीख (End Date):", datetime.today(), key="leave_to")
                         leave_reason = st.text_input("कारण (Reason):", key="leave_reason")
 
-                        if st.button("📤 लीव एप्लीकेशन सबमिट करें"):
+                        if st.button("📤 लीव एप्लीकेशन सबमिट करें (Submit Leave Request)"):
                             if leave_to < leave_from:
-                                st.warning("⚠️ End date, start date से पहले नहीं हो सकती।")
+                                st.warning("⚠️ End date, start date से पहले नहीं हो सकती। (End date cannot be before start date.)")
                             else:
                                 try:
                                     leave_sheet = sh.worksheet("Leave_Requests")
@@ -1118,7 +1118,7 @@ if st.session_state['logged_in']:
                                 ])
                                 log_audit(current_actor(), "Apply Leave", f"{leave_staff_row['Name']} ({leave_from} to {leave_to})")
                                 st.cache_data.clear()
-                                st.success("🎉 लीव एप्लीकेशन सबमिट हो गई है, अप्रूवल का इंतज़ार है।")
+                                st.success("🎉 लीव एप्लीकेशन सबमिट हो गई है, अप्रूवल का इंतज़ार है। (Leave request submitted, awaiting approval.)")
                                 st.rerun()
 
             with leave_tab2:
@@ -1129,22 +1129,22 @@ if st.session_state['logged_in']:
                     view_leave_df = leave_requests_df[leave_requests_df['Center'] == admin_view] if not leave_requests_df.empty and 'Center' in leave_requests_df.columns else pd.DataFrame()
 
                 if view_leave_df.empty:
-                    st.info("कोई लीव एप्लीकेशन उपलब्ध नहीं है।")
+                    st.info("कोई लीव एप्लीकेशन उपलब्ध नहीं है। (No leave requests available.)")
                 else:
                     pending_df = view_leave_df[view_leave_df['Status'] == 'Pending']
-                    st.markdown(f"**पेंडिंग एप्लीकेशन: {len(pending_df)}**")
+                    st.markdown(f"**पेंडिंग एप्लीकेशन (Pending Requests): {len(pending_df)}**")
                     st.dataframe(view_leave_df[['ID', 'Staff Name', 'Center', 'From Date', 'To Date', 'Reason', 'Status']].sort_values('ID', ascending=False).reset_index(drop=True), use_container_width=True)
 
                     if not pending_df.empty:
                         st.markdown("---")
-                        st.subheader("✅ पेंडिंग एप्लीकेशन पर एक्शन लें")
+                        st.subheader("✅ पेंडिंग एप्लीकेशन पर एक्शन लें (Act on Pending Requests)")
                         leave_action_options = {f"ID {r['ID']} - {r['Staff Name']} ({r['From Date']} to {r['To Date']})": r['ID'] for _, r in pending_df.iterrows()}
-                        leave_action_label = st.selectbox("एप्लीकेशन चुनें:", list(leave_action_options.keys()), key="leave_action_select")
+                        leave_action_label = st.selectbox("एप्लीकेशन चुनें (Select Request):", list(leave_action_options.keys()), key="leave_action_select")
                         leave_action_row = pending_df[pending_df['ID'] == leave_action_options[leave_action_label]].iloc[0]
 
                         col_la1, col_la2 = st.columns(2)
                         with col_la1:
-                            if st.button("✅ अप्रूव करें"):
+                            if st.button("✅ अप्रूव करें (Approve)"):
                                 leave_sheet = sh.worksheet("Leave_Requests")
                                 all_leave_rows = leave_sheet.get_all_values()
                                 target_leave_id = str(leave_action_options[leave_action_label])
@@ -1176,10 +1176,10 @@ if st.session_state['logged_in']:
                                         logger.warning(f"Attendance auto-mark on leave approval failed: {e}")
                                     log_audit(current_actor(), "Approve Leave", leave_action_label)
                                     st.cache_data.clear()
-                                    st.success("✅ लीव अप्रूव हो गई और अटेंडेंस अपडेट हो गई!")
+                                    st.success("✅ लीव अप्रूव हो गई और अटेंडेंस अपडेट हो गई! (Leave approved and attendance updated!)")
                                     st.rerun()
                         with col_la2:
-                            if st.button("❌ रिजेक्ट करें"):
+                            if st.button("❌ रिजेक्ट करें (Reject)"):
                                 leave_sheet = sh.worksheet("Leave_Requests")
                                 all_leave_rows = leave_sheet.get_all_values()
                                 target_leave_id = str(leave_action_options[leave_action_label])
@@ -1188,14 +1188,14 @@ if st.session_state['logged_in']:
                                     leave_sheet.update_cell(row_to_update, 8, "Rejected")
                                     log_audit(current_actor(), "Reject Leave", leave_action_label)
                                     st.cache_data.clear()
-                                    st.success("❌ लीव रिजेक्ट कर दी गई है।")
+                                    st.success("❌ लीव रिजेक्ट कर दी गई है। (Leave request rejected.)")
                                     st.rerun()
 
     elif menu == "📅 दैनिक हाजिरी (Attendance)":
-        st.markdown("<h2>📅 डिजिटल हाजिरी रजिस्टर</h2>", unsafe_allow_html=True)
+        st.markdown("<h2>📅 डिजिटल हाजिरी रजिस्टर (Digital Attendance Register)</h2>", unsafe_allow_html=True)
         staff_df = load_cloud_data_fast("Staff")
         if admin_view == "सभी सेंटर्स (All Centers)":
-            att_center = st.selectbox("🎯 हाजिरी रजिस्टर ओपन करने के लिए सेंटर चुनें:", actual_centers)
+            att_center = st.selectbox("🎯 हाजिरी रजिस्टर ओपन करने के लिए सेंटर चुनें (Select Center):", actual_centers)
         else:
             att_center = admin_view
         center_staff = staff_df[staff_df['Center'] == att_center] if not staff_df.empty else pd.DataFrame()
