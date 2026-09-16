@@ -211,22 +211,73 @@ logo_file = find_clinic_image("logo")
 # --- 🎨 प्रीमियम थीम CSS ---
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; font-family: 'Segoe UI', sans-serif; }
-    .metric-card {
-        background-color: #ffffff; padding: 22px; border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-top: 4px solid #008080;
-        text-align: center;
-    }
-    .metric-title { color: #6c757d; font-size: 13px; font-weight: 600; text-transform: uppercase; }
-    .metric-value { color: #101010; font-size: 28px; font-weight: 700; margin-top: 5px; }
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Poppins', 'Segoe UI', sans-serif; }
+    .main { background: linear-gradient(180deg, #f4f7fa 0%, #eef2f7 100%); }
+
     h1, h2, h3 { color: #0b3c4f; font-weight: 600 !important; }
+    hr { background: linear-gradient(90deg, transparent, #008080, transparent) !important; height: 2px !important; border: none !important; }
+
+    /* --- मेट्रिक कार्ड --- */
+    .metric-card {
+        background-color: #ffffff; padding: 22px; border-radius: 14px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.06); border-top: 4px solid #008080;
+        text-align: center; transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .metric-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 24px rgba(0,0,0,0.12);
+    }
+    .metric-title { color: #6c757d; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric-value { color: #101010; font-size: 26px; font-weight: 700; margin-top: 6px; }
+
+    /* --- बटन --- */
+    .stButton>button, .stDownloadButton>button, .stLinkButton>a {
+        background: linear-gradient(135deg, #00b4d8, #008080) !important;
+        color: white !important;
+        border-radius: 8px !important; padding: 8px 22px !important;
+        font-weight: 600 !important; border: none !important;
+        transition: all 0.2s ease-in-out !important;
+        box-shadow: 0 3px 8px rgba(0,128,128,0.3) !important;
+    }
+    .stButton>button:hover, .stDownloadButton>button:hover, .stLinkButton>a:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 14px rgba(0,128,128,0.45) !important;
+    }
+
+    /* --- साइडबार बेस --- */
     [data-testid="stSidebar"] { background-color: #0b3c4f !important; }
     [data-testid="stSidebar"] * { color: #ffffff !important; }
-    [data-testid="stSidebar"] input { color: #ffffff !important; background-color: #0b3c4f !important; }
-    .stButton>button {
-        background-color: #008080 !important; color: white !important;
-        border-radius: 6px !important; padding: 8px 20px !important;
-        font-weight: 600 !important; border: none !important;
+    [data-testid="stSidebar"] input { color: #ffffff !important; background-color: #123b4d !important; }
+
+    /* --- मल्टीकलर साइडबार नेविगेशन मेनू --- */
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] [data-testid="stRadioGroup"] {
+        gap: 8px;
+    }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] label[data-testid="stRadioOption"] {
+        border-radius: 10px !important;
+        padding: 10px 14px !important;
+        display: block !important;
+        width: 100% !important;
+        border: 1px solid rgba(255,255,255,0.15) !important;
+        transition: all 0.15s ease-in-out !important;
+    }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] label[data-testid="stRadioOption"]:hover {
+        filter: brightness(1.15);
+        transform: translateX(3px);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] [data-testid="stRadioGroup"] > div:nth-of-type(1) label[data-testid="stRadioOption"] { background: linear-gradient(135deg, #00b4d8, #0077b6); }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] [data-testid="stRadioGroup"] > div:nth-of-type(2) label[data-testid="stRadioOption"] { background: linear-gradient(135deg, #9d4edd, #7b2cbf); }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] [data-testid="stRadioGroup"] > div:nth-of-type(3) label[data-testid="stRadioOption"] { background: linear-gradient(135deg, #ff9f43, #f77f00); }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] [data-testid="stRadioGroup"] > div:nth-of-type(4) label[data-testid="stRadioOption"] { background: linear-gradient(135deg, #ff6b9d, #e63980); }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] [data-testid="stRadioGroup"] > div:nth-of-type(5) label[data-testid="stRadioOption"] { background: linear-gradient(135deg, #4895ef, #3a0ca3); }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] [data-testid="stRadioGroup"] > div:nth-of-type(6) label[data-testid="stRadioOption"] { background: linear-gradient(135deg, #2ec4b6, #06923e); }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] [data-testid="stRadioGroup"] > div:nth-of-type(7) label[data-testid="stRadioOption"] { background: linear-gradient(135deg, #f9a826, #f77f00); }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] [data-testid="stRadioGroup"] > div:nth-of-type(8) label[data-testid="stRadioOption"] { background: linear-gradient(135deg, #ef476f, #d90429); }
+    [data-testid="stElementContainer"]:has(.menu-nav-anchor) + [data-testid="stElementContainer"] label[data-testid="stRadioOption"][data-selected="true"] {
+        box-shadow: 0 0 0 2px #ffffff inset, 0 4px 14px rgba(0,0,0,0.4) !important;
+        transform: scale(1.02);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -641,7 +692,9 @@ if st.session_state['logged_in']:
         if allowed_menus:
             menu_options = [m for m in menu_options if m in allowed_menus]
 
-    menu = st.sidebar.radio("🧭 मेनू नेविगेशन:", menu_options)
+    st.sidebar.markdown("<p style='margin-bottom:2px; font-weight:600; opacity:0.85;'>🧭 मेनू नेविगेशन</p>", unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="menu-nav-anchor"></div>', unsafe_allow_html=True)
+    menu = st.sidebar.radio("मेनू नेविगेशन", menu_options, label_visibility="collapsed")
     
     if menu == "🏠 डैशबोर्ड (Dashboard)":
         st.markdown(f"<h2>📊 {admin_view} ओवरव्यू</h2>", unsafe_allow_html=True)
@@ -720,13 +773,14 @@ if st.session_state['logged_in']:
         if admin_view == "सभी सेंटर्स (All Centers)" and actual_centers:
             st.write("---")
             st.markdown("### 🏥 सेंटर-वाइज तुलना")
-            comparison_rows = []
-            for c in actual_centers:
-                c_staff_count = len(staff_df[staff_df['Center'] == c]) if not staff_df.empty else 0
-                c_today_patients = patients_df[(patients_df['Center'] == c) & (patients_df['Date'] == today_date)] if not patients_df.empty else pd.DataFrame()
-                c_today_fees = c_today_patients['Fees'].sum() if not c_today_patients.empty and 'Fees' in c_today_patients.columns else 0
-                comparison_rows.append({"सेंटर": c, "स्टाफ": c_staff_count, "आज के मरीज": len(c_today_patients), "आज की फीस (₹)": int(c_today_fees)})
-            st.dataframe(pd.DataFrame(comparison_rows), use_container_width=True, hide_index=True)
+            with st.container(border=True):
+                comparison_rows = []
+                for c in actual_centers:
+                    c_staff_count = len(staff_df[staff_df['Center'] == c]) if not staff_df.empty else 0
+                    c_today_patients = patients_df[(patients_df['Center'] == c) & (patients_df['Date'] == today_date)] if not patients_df.empty else pd.DataFrame()
+                    c_today_fees = c_today_patients['Fees'].sum() if not c_today_patients.empty and 'Fees' in c_today_patients.columns else 0
+                    comparison_rows.append({"सेंटर": c, "स्टाफ": c_staff_count, "आज के मरीज": len(c_today_patients), "आज की फीस (₹)": int(c_today_fees)})
+                st.dataframe(pd.DataFrame(comparison_rows), use_container_width=True, hide_index=True)
 
         st.write("---")
         st.markdown(f"### 📋 आज के पंजीकृत मरीज ({today_date})")
@@ -747,20 +801,22 @@ if st.session_state['logged_in']:
             trend_fees = pd.Series([0] * 7, index=last_7_dates)
             trend_counts = pd.Series([0] * 7, index=last_7_dates)
 
-        col_t1, col_t2 = st.columns(2)
-        with col_t1:
-            st.markdown("**💵 दैनिक फीस कलेक्शन**")
-            st.line_chart(trend_fees)
-        with col_t2:
-            st.markdown("**🧒 दैनिक मरीज पंजीकरण**")
-            st.bar_chart(trend_counts)
+        with st.container(border=True):
+            col_t1, col_t2 = st.columns(2)
+            with col_t1:
+                st.markdown("**💵 दैनिक फीस कलेक्शन**")
+                st.line_chart(trend_fees, color="#008080")
+            with col_t2:
+                st.markdown("**🧒 दैनिक मरीज पंजीकरण**")
+                st.bar_chart(trend_counts, color="#ff9f43")
 
         if not center_patients_all.empty and 'Condition' in center_patients_all.columns:
             cond_counts = center_patients_all['Condition'].value_counts().head(6)
             if not cond_counts.empty:
                 st.write("---")
                 st.markdown("### 🩺 समस्या-वार मरीज वितरण (Top Conditions)")
-                st.bar_chart(cond_counts)
+                with st.container(border=True):
+                    st.bar_chart(cond_counts, color="#7b2cbf")
 
     elif menu == "👥 स्टाफ मैनेजमेंट (HR & Staff)":
         st.markdown("<h2>👥 स्टाफ मैनेजमेंट पोर्टल</h2>", unsafe_allow_html=True)
