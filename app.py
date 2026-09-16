@@ -32,6 +32,9 @@ def verify_password(stored, provided):
 def is_hashed(stored):
     return stored.startswith("pbkdf2_sha256$")
 
+def is_valid_mobile(mobile):
+    return str(mobile).strip().isdigit() and len(str(mobile).strip()) == 10
+
 st.set_page_config(page_title="Normal Child Clinic - Management Portal", layout="wide")
 
 # --- 🔍 इमेज स्कैनर ---
@@ -97,7 +100,7 @@ if sh is None:
     st.stop()
 
 # --- 🔒 क्लाउड डेटा लोडर ---
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=20)
 def load_cloud_data_fast(sheet_name):
     try:
         worksheet = sh.worksheet(sheet_name)
@@ -223,6 +226,18 @@ def sync_monthly_attendance_to_sheet(sh, summary_df, month_year, center_filter):
         logger.warning(f"sync_monthly_attendance_to_sheet failed for {month_year}/{center_filter}: {e}")
         return False
 
+# --- 📝 ऑडिट लॉग ---
+def log_audit(actor, action, details):
+    try:
+        try:
+            audit_sheet = sh.worksheet("Audit_Log")
+        except Exception:
+            audit_sheet = sh.add_worksheet(title="Audit_Log", rows="1000", cols="4")
+            audit_sheet.update(range_name="A1:D1", values=[["Timestamp", "Center/User", "Action", "Details"]])
+        audit_sheet.append_row([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), str(actor), str(action), str(details)])
+    except Exception as e:
+        logger.warning(f"log_audit failed: {e}")
+
 # --- 🔑 लाइव पासवर्ड मैनेजर ---
 @st.cache_data(ttl=5)
 def get_live_passwords():
@@ -332,11 +347,15 @@ if st.session_state['logged_in']:
     
     if menu == "🏠 डैशबोर्ड (Dashboard)":
         st.markdown(f"<h2>📊 {admin_view} ओवरव्यू</h2>", unsafe_allow_html=True)
-        if selected_center == "HR_Admin":
-            for c in actual_centers: sync_total_fees_batch(sh, today_date, c)
-        else:
-            sync_total_fees_batch(sh, today_date, selected_center)
-        
+        sync_throttle_key = f"last_fee_sync_{admin_view}"
+        last_sync_time = st.session_state.get(sync_throttle_key)
+        if not last_sync_time or (datetime.now() - last_sync_time).total_seconds() > 30:
+            if selected_center == "HR_Admin":
+                for c in actual_centers: sync_total_fees_batch(sh, today_date, c)
+            else:
+                sync_total_fees_batch(sh, today_date, selected_center)
+            st.session_state[sync_throttle_key] = datetime.now()
+
         staff_df = load_cloud_data_fast("Staff")
         patients_df = load_cloud_data_fast("Patients")
         
@@ -379,13 +398,18 @@ if st.session_state['logged_in']:
                 s_mobile = st.text_input("📞 मोबाइल नंबर:", max_chars=10)
                 s_salary = st.number_input("💵 मासिक सैलरी (₹):", min_value=0, value=0, step=1000)
             if st.button("🚀 क्लाउड पर सेव करें"):
-                if s_name and s_mobile:
+                if not s_name or not s_mobile:
+                    st.warning("⚠️ कृपया नाम और मोबाइल नंबर दोनों भरें।")
+                elif not is_valid_mobile(s_mobile):
+                    st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए।")
+                else:
                     if not staff_df.empty and 'ID' in staff_df.columns:
                         existing_s_ids = pd.to_numeric(staff_df['ID'], errors='coerce').dropna()
                         next_s_id = int(existing_s_ids.max()) + 1 if not existing_s_ids.empty else 1
                     else:
                         next_s_id = 1
                     sh.worksheet("Staff").append_row([next_s_id, s_name, s_role, str(s_mobile), s_target_center, int(s_salary)])
+                    log_audit(selected_center, "Add Staff", f"{s_name} ({s_role}) added to {s_target_center}, ID {next_s_id}")
                     st.cache_data.clear()
                     st.success(f"🎉 {s_name} को सफलतापूर्वक {s_target_center} सेंटर में जोड़ दिया गया है!")
                     st.rerun()
@@ -394,10 +418,33 @@ if st.session_state['logged_in']:
                 view_staff_df = staff_df if not staff_df.empty else pd.DataFrame()
             else:
                 view_staff_df = staff_df[staff_df['Center'] == admin_view] if not staff_df.empty else pd.DataFrame()
-            if not view_staff_df.empty: 
+
+            staff_search = st.text_input("🔍 नाम या मोबाइल नंबर से खोजें:", key="staff_search")
+            if staff_search and not view_staff_df.empty:
+                mask = view_staff_df['Name'].str.contains(staff_search, case=False, na=False) | view_staff_df['Mobile'].str.contains(staff_search, case=False, na=False)
+                view_staff_df = view_staff_df[mask]
+
+            if not view_staff_df.empty:
                 st.dataframe(view_staff_df[['ID', 'Name', 'Role', 'Mobile', 'Salary', 'Center']].reset_index(drop=True), use_container_width=True)
-            else: 
+            else:
                 st.info("इस फ़िल्टर पर अभी कोई स्टाफ डेटा नहीं है।")
+
+            if not view_staff_df.empty:
+                st.markdown("---")
+                st.subheader("🗑️ स्टाफ हटाएं")
+                del_staff_options = {f"{r['Name']} ({r['Role']}, {r['Center']}) - ID {r['ID']}": r['ID'] for _, r in view_staff_df.iterrows()}
+                del_staff_label = st.selectbox("हटाने के लिए स्टाफ चुनें:", list(del_staff_options.keys()), key="del_staff_select")
+                if st.button("❌ स्टाफ डिलीट करें"):
+                    s_sheet = sh.worksheet("Staff")
+                    all_s_rows = s_sheet.get_all_values()
+                    target_s_id = str(del_staff_options[del_staff_label])
+                    row_to_delete = next((idx + 2 for idx, r in enumerate(all_s_rows[1:]) if r and str(r[0]).strip() == target_s_id), None)
+                    if row_to_delete:
+                        s_sheet.delete_rows(row_to_delete)
+                        log_audit(selected_center, "Delete Staff", f"{del_staff_label}")
+                        st.cache_data.clear()
+                        st.success("🗑️ स्टाफ रिकॉर्ड डिलीट हो गया है!")
+                        st.rerun()
 
     elif menu == "📅 दैनिक हाजिरी (Attendance)":
         st.markdown("<h2>📅 डिजिटल हाजिरी रजिस्टर</h2>", unsafe_allow_html=True)
@@ -447,6 +494,7 @@ if st.session_state['logged_in']:
                             next_id_counter += 1
                             att_sheet.append_row([next_id, int(s_id), info['name'], today_date, info['status'], att_center])
                             all_rows.append([next_id, int(s_id), info['name'], today_date, info['status'], att_center])
+                    log_audit(selected_center, "Submit Attendance", f"{att_center} - {today_date} ({len(attendance_dict)} स्टाफ)")
                     st.cache_data.clear()
                     st.success(f"✅ {att_center} सेंटर का अटेंडेंस शीट डेटा lock हो गया है!")
                     st.rerun()
@@ -477,12 +525,17 @@ if st.session_state['logged_in']:
                 c_cond = st.selectbox("🩺 मुख्य समस्या:", ["Autism (ऑटिज़्म)", "ADHD", "Cerebral Palsy", "Delayed Speech", "Other"])
                 c_fees = st.number_input("💵 प्राप्त फीस राशि (₹):", min_value=0, value=0, step=100)
             if st.button("🎯 मरीज रिकॉर्ड सुरक्षित करें"):
-                if c_name and p_name and p_mobile:
+                if not c_name or not p_name or not p_mobile:
+                    st.warning("⚠️ कृपया बच्चे का नाम, अभिभावक का नाम और मोबाइल नंबर भरें।")
+                elif not is_valid_mobile(p_mobile):
+                    st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए।")
+                else:
                     p_sheet = sh.worksheet("Patients")
                     all_p_rows = p_sheet.get_all_values()
                     existing_p_ids = [int(r[0]) for r in all_p_rows[1:] if r and str(r[0]).strip().isdigit()]
                     next_p_id = max(existing_p_ids) + 1 if existing_p_ids else 1
                     p_sheet.append_row([next_p_id, c_name, p_name, int(c_age), c_cond, str(p_mobile), p_target_center, today_date, int(c_fees), "", p_type])
+                    log_audit(selected_center, "Add Patient", f"{c_name} s/o {p_name} added to {p_target_center}, ID {next_p_id}")
                     sync_total_fees_batch(sh, today_date, p_target_center)
                     sync_daily_collection_to_sheet(sh, today_date, p_target_center)
                     st.cache_data.clear()
@@ -491,32 +544,59 @@ if st.session_state['logged_in']:
         with tab_p2:
             if center_patients.empty: st.info("कोई मरीज डेटा उपलब्ध नहीं है।")
             else:
-                patient_options = {f"[{row['Center']}] {row['Child Name']} s/o {row['Parent Name']} (ID: {row['ID']})": row['ID'] for _, row in center_patients.iterrows()}
-                selected_pat_label = st.selectbox("संशोधन के लिए मरीज चुनें:", list(patient_options.keys()))
-                pat_data = center_patients[center_patients['ID'] == patient_options[selected_pat_label]].iloc[0]
-                col_e1, col_e2 = st.columns(2)
-                with col_e1:
-                    edit_c_name = st.text_input("बच्चे का नाम बदलें:", value=str(pat_data['Child Name']))
-                    edit_p_name = st.text_input("अभिभावक का नाम बदलें:", value=str(pat_data['Parent Name']))
-                    edit_p_mobile = st.text_input("मोबाइल नंबर बदलें:", value=str(pat_data['Mobile']), max_chars=10)
-                    edit_p_type = st.selectbox("मरीज का प्रकार बदलें:", ["New Patient (नया)", "Old Patient (पुराना)"], index=0 if 'Patient Type' not in pat_data or pat_data['Patient Type'] == 'New Patient (नया)' else 1)
-                with col_e2:
-                    edit_c_age = st.number_input("उम्र बदलें:", min_value=1, max_value=18, value=int(pat_data['Age']))
-                    cond_options = ["Autism (ऑटिज़्म)", "ADHD", "Cerebral Palsy", "Delayed Speech", "Other"]
-                    current_cond = pat_data['Condition'] if 'Condition' in pat_data else None
-                    edit_c_cond = st.selectbox("समस्या बदलें:", cond_options, index=cond_options.index(current_cond) if current_cond in cond_options else 0)
-                    edit_c_fees = st.number_input("फीस राशि बदलें (₹):", min_value=0, value=int(pat_data['Fees']) if 'Fees' in pat_data else 0, step=100)
-                if st.button("💾 मरीज डेटा अपडेट करें"):
-                    p_sheet = sh.worksheet("Patients")
+                pat_search = st.text_input("🔍 बच्चे/अभिभावक का नाम या मोबाइल नंबर से खोजें:", key="patient_search")
+                search_patients = center_patients
+                if pat_search:
+                    mask = (
+                        center_patients['Child Name'].str.contains(pat_search, case=False, na=False)
+                        | center_patients['Parent Name'].str.contains(pat_search, case=False, na=False)
+                        | center_patients['Mobile'].str.contains(pat_search, case=False, na=False)
+                    )
+                    search_patients = center_patients[mask]
+
+                if search_patients.empty:
+                    st.info("💡 खोज से मेल खाता कोई मरीज नहीं मिला।")
+                else:
+                    patient_options = {f"[{row['Center']}] {row['Child Name']} s/o {row['Parent Name']} (ID: {row['ID']})": row['ID'] for _, row in search_patients.iterrows()}
+                    selected_pat_label = st.selectbox("संशोधन के लिए मरीज चुनें:", list(patient_options.keys()))
+                    pat_data = center_patients[center_patients['ID'] == patient_options[selected_pat_label]].iloc[0]
                     real_p_row_idx = patients_df[patients_df['ID'] == patient_options[selected_pat_label]].index[0] + 2
-                    p_orig_center = str(pat_data['Center'])
-                    p_sheet.update(range_name=f"A{real_p_row_idx}:K{real_p_row_idx}", values=[[int(patient_options[selected_pat_label]), edit_c_name, edit_p_name, int(edit_c_age), edit_c_cond, str(edit_p_mobile), p_orig_center, str(pat_data['Date']), int(edit_c_fees), "", edit_p_type]])
-                    target_date = str(pat_data['Date'])
-                    sync_total_fees_batch(sh, target_date, p_orig_center)
-                    sync_daily_collection_to_sheet(sh, target_date, p_orig_center)
-                    st.cache_data.clear()
-                    st.success("📝 रिकॉर्ड सफलतापूर्वक बैच मोड में अपडेटेड!")
-                    st.rerun()
+                    col_e1, col_e2 = st.columns(2)
+                    with col_e1:
+                        edit_c_name = st.text_input("बच्चे का नाम बदलें:", value=str(pat_data['Child Name']))
+                        edit_p_name = st.text_input("अभिभावक का नाम बदलें:", value=str(pat_data['Parent Name']))
+                        edit_p_mobile = st.text_input("मोबाइल नंबर बदलें:", value=str(pat_data['Mobile']), max_chars=10)
+                        edit_p_type = st.selectbox("मरीज का प्रकार बदलें:", ["New Patient (नया)", "Old Patient (पुराना)"], index=0 if 'Patient Type' not in pat_data or pat_data['Patient Type'] == 'New Patient (नया)' else 1)
+                    with col_e2:
+                        edit_c_age = st.number_input("उम्र बदलें:", min_value=1, max_value=18, value=int(pat_data['Age']))
+                        cond_options = ["Autism (ऑटिज़्म)", "ADHD", "Cerebral Palsy", "Delayed Speech", "Other"]
+                        current_cond = pat_data['Condition'] if 'Condition' in pat_data else None
+                        edit_c_cond = st.selectbox("समस्या बदलें:", cond_options, index=cond_options.index(current_cond) if current_cond in cond_options else 0)
+                        edit_c_fees = st.number_input("फीस राशि बदलें (₹):", min_value=0, value=int(pat_data['Fees']) if 'Fees' in pat_data else 0, step=100)
+                    col_upd, col_del = st.columns(2)
+                    with col_upd:
+                        if st.button("💾 मरीज डेटा अपडेट करें"):
+                            if not is_valid_mobile(edit_p_mobile):
+                                st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए।")
+                            else:
+                                p_sheet = sh.worksheet("Patients")
+                                p_orig_center = str(pat_data['Center'])
+                                p_sheet.update(range_name=f"A{real_p_row_idx}:K{real_p_row_idx}", values=[[int(patient_options[selected_pat_label]), edit_c_name, edit_p_name, int(edit_c_age), edit_c_cond, str(edit_p_mobile), p_orig_center, str(pat_data['Date']), int(edit_c_fees), "", edit_p_type]])
+                                target_date = str(pat_data['Date'])
+                                log_audit(selected_center, "Edit Patient", f"ID {patient_options[selected_pat_label]} ({edit_c_name}) updated")
+                                sync_total_fees_batch(sh, target_date, p_orig_center)
+                                sync_daily_collection_to_sheet(sh, target_date, p_orig_center)
+                                st.cache_data.clear()
+                                st.success("📝 रिकॉर्ड सफलतापूर्वक बैच मोड में अपडेटेड!")
+                                st.rerun()
+                    with col_del:
+                        if st.button("🗑️ मरीज रिकॉर्ड डिलीट करें"):
+                            p_sheet = sh.worksheet("Patients")
+                            p_sheet.delete_rows(real_p_row_idx)
+                            log_audit(selected_center, "Delete Patient", f"ID {patient_options[selected_pat_label]} ({pat_data['Child Name']}) deleted")
+                            st.cache_data.clear()
+                            st.success("🗑️ मरीज रिकॉर्ड डिलीट हो गया है!")
+                            st.rerun()
 
     elif menu == "📊 रिपोर्ट सेंटर (Advanced Reports)":
         st.markdown("<h2>📊 क्लिनिक एडवांस्ड रिपोर्ट पैनल</h2>", unsafe_allow_html=True)
@@ -535,6 +615,15 @@ if st.session_state['logged_in']:
                         with col_f2: selected_report_date = st.date_input("📆 पुरानी तारीख चुनें (Select Past Date):", datetime.today())
                         date_str = selected_report_date.strftime('%Y-%m-%d')
                         filtered_df = center_df[center_df['Date'] == date_str]
+                    report_search = st.text_input("🔍 बच्चे/अभिभावक का नाम या मोबाइल नंबर से खोजें:", key="report_patient_search")
+                    if report_search:
+                        mask = (
+                            filtered_df['Child Name'].str.contains(report_search, case=False, na=False)
+                            | filtered_df['Parent Name'].str.contains(report_search, case=False, na=False)
+                            | filtered_df['Mobile'].str.contains(report_search, case=False, na=False)
+                        )
+                        filtered_df = filtered_df[mask]
+
                     t_patients = len(filtered_df)
                     t_fees = filtered_df['Fees'].sum() if 'Fees' in filtered_df.columns else 0
                     st.markdown(f"##### 📈 चयनित व्यू अवधि का परफॉर्मेंस समरी")
@@ -621,6 +710,7 @@ if st.session_state['logged_in']:
                 row_to_update = next((idx + 2 for idx, r in enumerate(p_records) if r['Center'] == edit_center), None)
                 if row_to_update and new_pwd_input.strip():
                     pwd_sheet.update(range_name=f"B{row_to_update}", values=[[hash_password(new_pwd_input.strip())]])
+                    log_audit(selected_center, "Update Password", f"Password changed for {edit_center}")
                     st.cache_data.clear()
                     st.success("🎉 पासवर्ड अपडेट हो गया!")
                     st.rerun()
@@ -632,6 +722,7 @@ if st.session_state['logged_in']:
             if st.button("🚀 नया सेंटर जोड़ें"):
                 if new_center_name and new_center_pwd:
                     pwd_sheet.append_row([new_center_name, hash_password(new_center_pwd)])
+                    log_audit(selected_center, "Add Center", f"Center '{new_center_name}' added")
                     st.cache_data.clear()
                     st.success(f"🎉 सेंटर '{new_center_name}' सफलतापूर्वक जुड़ गया!")
                     st.rerun()
@@ -650,6 +741,7 @@ if st.session_state['logged_in']:
                     row_idx = next((idx + 2 for idx, r in enumerate(p_records) if r['Center'] == del_center), None)
                     if row_idx:
                         pwd_sheet.delete_rows(row_idx)
+                        log_audit(selected_center, "Delete Center", f"Center '{del_center}' deleted")
                         st.cache_data.clear()
                         st.success(f"🗑️ सेंटर '{del_center}' हटा दिया गया है!")
                         st.rerun()

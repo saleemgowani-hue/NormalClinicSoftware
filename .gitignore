@@ -1,0 +1,15 @@
+# Secrets — never commit clinic credentials
+secret_key.json
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# OS/editor cruft
+.DS_Store
+.vscode/
+.idea/
