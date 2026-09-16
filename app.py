@@ -1,9 +1,32 @@
 import streamlit as st
 import gspread
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import json
+import hashlib
+import hmac
+import secrets
+
+# --- 🔐 पासवर्ड हैशिंग हेल्पर्स ---
+def hash_password(password):
+    salt = secrets.token_hex(16)
+    iterations = 260000
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), iterations)
+    return f"pbkdf2_sha256${iterations}${salt}${dk.hex()}"
+
+def verify_password(stored, provided):
+    try:
+        algo, iterations, salt, hash_hex = stored.split('$')
+        if algo != 'pbkdf2_sha256':
+            return False
+        dk = hashlib.pbkdf2_hmac('sha256', provided.encode(), salt.encode(), int(iterations))
+        return hmac.compare_digest(dk.hex(), hash_hex)
+    except ValueError:
+        return False
+
+def is_hashed(stored):
+    return stored.startswith("pbkdf2_sha256$")
 
 st.set_page_config(page_title="Normal Child Clinic - Management Portal", layout="wide")
 
@@ -201,10 +224,14 @@ def get_live_passwords():
         password_sheet = sh.worksheet("Passwords")
         records = password_sheet.get_all_records()
         return {r['Center']: str(r['Password']) for r in records if r['Center']}
-    except:
-        return {"Raipur": "raipur@123", "HR_Admin": "admin@hr"}
+    except Exception:
+        return {}
 
 PASSWORDS = get_live_passwords()
+
+if not PASSWORDS:
+    st.error("❌ पासवर्ड डेटा लोड नहीं हो सका। कृपया 'Passwords' शीट जांचें और पेज रीलोड करें।")
+    st.stop()
 
 if banner_file: st.image(banner_file, width=280)
 else: st.markdown('<div style="background: linear-gradient(135deg, #0b3c4f 0%, #008080 100%); padding: 8px 15px; border-radius: 6px; display: inline-block; margin-bottom: 15px;"><h4 style="color: white; margin: 0; font-size: 15px;">🏥 NORMAL CHILD CLINIC</h4></div>', unsafe_allow_html=True)
@@ -227,23 +254,66 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'current_center' not in st.session_state:
     st.session_state['current_center'] = selected_center
+if 'login_attempts' not in st.session_state:
+    st.session_state['login_attempts'] = 0
+if 'lockout_until' not in st.session_state:
+    st.session_state['lockout_until'] = None
 
 if st.session_state['current_center'] != selected_center:
     st.session_state['logged_in'] = False
     st.session_state['current_center'] = selected_center
 
-if st.sidebar.button("🚀 Login"):
-    if input_password == PASSWORDS.get(selected_center) or input_password == PASSWORDS.get("HR_Admin"):
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 5
+
+def _check_and_migrate(center_key, provided_password):
+    stored = PASSWORDS.get(center_key)
+    if not stored:
+        return False
+    if is_hashed(stored):
+        return verify_password(stored, provided_password)
+    if hmac.compare_digest(stored, provided_password):
+        try:
+            pwd_sheet = sh.worksheet("Passwords")
+            p_records = pwd_sheet.get_all_records()
+            row_to_update = next((idx + 2 for idx, r in enumerate(p_records) if r['Center'] == center_key), None)
+            if row_to_update:
+                pwd_sheet.update(range_name=f"B{row_to_update}", values=[[hash_password(provided_password)]])
+                st.cache_data.clear()
+        except Exception:
+            pass
+        return True
+    return False
+
+now = datetime.now()
+locked_out = st.session_state['lockout_until'] and now < st.session_state['lockout_until']
+
+if locked_out:
+    remaining = int((st.session_state['lockout_until'] - now).total_seconds())
+    st.sidebar.error(f"🔒 बहुत ज़्यादा गलत प्रयास। कृपया {remaining} सेकंड बाद कोशिश करें।")
+elif st.sidebar.button("🚀 Login"):
+    if _check_and_migrate(selected_center, input_password) or _check_and_migrate("HR_Admin", input_password):
         st.session_state['logged_in'] = True
+        st.session_state['login_attempts'] = 0
+        st.session_state['lockout_until'] = None
     else:
         st.session_state['logged_in'] = False
-        st.sidebar.error("❌ गलत पासवर्ड!")
+        st.session_state['login_attempts'] += 1
+        if st.session_state['login_attempts'] >= MAX_LOGIN_ATTEMPTS:
+            st.session_state['lockout_until'] = now + timedelta(minutes=LOCKOUT_MINUTES)
+            st.sidebar.error(f"🔒 {MAX_LOGIN_ATTEMPTS} गलत प्रयासों के बाद लॉगिन {LOCKOUT_MINUTES} मिनट के लिए लॉक हो गया।")
+        else:
+            left = MAX_LOGIN_ATTEMPTS - st.session_state['login_attempts']
+            st.sidebar.error(f"❌ गलत पासवर्ड! ({left} प्रयास शेष)")
 
 today_date = datetime.today().strftime('%Y-%m-%d')
 
 if st.session_state['logged_in']:
     st.sidebar.success("🔓 एक्सेस स्वीकृत")
-    
+    if st.sidebar.button("🚪 Logout"):
+        st.session_state['logged_in'] = False
+        st.rerun()
+
     if selected_center == "HR_Admin":
         st.sidebar.markdown("---")
         admin_view = st.sidebar.selectbox("🏢 सेंटर व्यू बदलें (Master Filter):", ["सभी सेंटर्स (All Centers)"] + actual_centers)
@@ -516,11 +586,11 @@ if st.session_state['logged_in']:
         
         with tab_pwd:
             edit_center = st.selectbox("सेंटर चुनें:", list(PASSWORDS.keys()))
-            new_pwd_input = st.text_input("नया पासवर्ड:")
+            new_pwd_input = st.text_input("नया पासवर्ड:", type="password")
             if st.button("💾 पासवर्ड अपडेट करें"):
                 row_to_update = next((idx + 2 for idx, r in enumerate(p_records) if r['Center'] == edit_center), None)
-                if row_to_update:
-                    pwd_sheet.update(range_name=f"B{row_to_update}", values=[[new_pwd_input.strip()]])
+                if row_to_update and new_pwd_input.strip():
+                    pwd_sheet.update(range_name=f"B{row_to_update}", values=[[hash_password(new_pwd_input.strip())]])
                     st.cache_data.clear()
                     st.success("🎉 पासवर्ड अपडेट हो गया!")
                     st.rerun()
@@ -531,7 +601,7 @@ if st.session_state['logged_in']:
             new_center_pwd = st.text_input("नये सेंटर का पासवर्ड:", type="password")
             if st.button("🚀 नया सेंटर जोड़ें"):
                 if new_center_name and new_center_pwd:
-                    pwd_sheet.append_row([new_center_name, new_center_pwd])
+                    pwd_sheet.append_row([new_center_name, hash_password(new_center_pwd)])
                     st.cache_data.clear()
                     st.success(f"🎉 सेंटर '{new_center_name}' सफलतापूर्वक जुड़ गया!")
                     st.rerun()
