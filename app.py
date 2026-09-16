@@ -1413,10 +1413,10 @@ if st.session_state['logged_in']:
                     st.dataframe(hist_sorted[hist_cols].reset_index(drop=True), use_container_width=True)
 
     elif menu == "📊 रिपोर्ट सेंटर (Advanced Reports)":
-        st.markdown("<h2>📊 क्लिनिक एडवांस्ड रिपोर्ट पैनल</h2>", unsafe_allow_html=True)
+        st.markdown("<h2>📊 क्लिनिक एडवांस्ड रिपोर्ट पैनल (Advanced Report Panel)</h2>", unsafe_allow_html=True)
         tab_report1, tab_report2, tab_report3, tab_report4, tab_report5, tab_report6 = st.tabs([
-            "🧒 मरीज एवं कलेक्शन रिपोर्ट", "👥 स्टाफ मासिक अटेंडेंस रिपोर्ट", "🧑‍⚕️ डॉक्टर परफॉर्मेंस",
-            "⏳ बकाया फीस", "📉 फॉलो-अप ट्रैकर", "📅 वार्षिक/त्रैमासिक तुलना"
+            "🧒 मरीज एवं कलेक्शन रिपोर्ट (Patient & Collection)", "👥 स्टाफ अटेंडेंस रिपोर्ट (Staff Attendance)", "🧑‍⚕️ डॉक्टर परफॉर्मेंस (Doctor Performance)",
+            "⏳ बकाया फीस (Due Fees)", "📉 फॉलो-अप ट्रैकर (Follow-up Tracker)", "📅 वार्षिक/त्रैमासिक तुलना (Yearly/Quarterly)"
         ])
         with tab_report1:
             patients_df = load_cloud_data_fast("Patients")
@@ -1425,14 +1425,14 @@ if st.session_state['logged_in']:
                 else: center_df = patients_df[patients_df['Center'] == admin_view].reset_index(drop=True)
                 if not center_df.empty:
                     col_f1, col_f2 = st.columns(2)
-                    with col_f1: report_filter = st.selectbox("📅 रिपोर्ट फ़िल्टर मोड चुनें:", ["आज का रिकॉर्ड (Today Only)", "किसी पुरानी तारीख का रिकॉर्ड (Past Date)", "शुरू से अब तक का पूरा रिकॉर्ड (All Time)"])
+                    with col_f1: report_filter = st.selectbox("📅 रिपोर्ट फ़िल्टर मोड चुनें (Select Filter Mode):", ["आज का रिकॉर्ड (Today Only)", "किसी पुरानी तारीख का रिकॉर्ड (Past Date)", "शुरू से अब तक का पूरा रिकॉर्ड (All Time)"])
                     filtered_df = center_df.copy()
                     if report_filter == "आज का रिकॉर्ड (Today Only)": filtered_df = center_df[center_df['Date'] == today_date]
                     elif report_filter == "किसी पुरानी तारीख का रिकॉर्ड (Past Date)":
                         with col_f2: selected_report_date = st.date_input("📆 पुरानी तारीख चुनें (Select Past Date):", datetime.today())
                         date_str = selected_report_date.strftime('%Y-%m-%d')
                         filtered_df = center_df[center_df['Date'] == date_str]
-                    report_search = st.text_input("🔍 बच्चे/अभिभावक का नाम या मोबाइल नंबर से खोजें:", key="report_patient_search")
+                    report_search = st.text_input("🔍 बच्चे/अभिभावक का नाम या मोबाइल नंबर से खोजें (Search by Name/Mobile):", key="report_patient_search")
                     if report_search:
                         mask = (
                             filtered_df['Child Name'].str.contains(report_search, case=False, na=False)
@@ -1443,57 +1443,57 @@ if st.session_state['logged_in']:
 
                     t_patients = len(filtered_df)
                     t_fees = filtered_df['Fees'].sum() if 'Fees' in filtered_df.columns else 0
-                    st.markdown(f"##### 📈 चयनित व्यू अवधि का परफॉर्मेंस समरी")
+                    st.markdown(f"##### 📈 चयनित व्यू अवधि का परफॉर्मेंस समरी (Performance Summary)")
                     col_m1, col_m2 = st.columns(2)
-                    col_m1.metric("🧒 कुल पंजीकृत मरीज", t_patients)
-                    col_m2.metric("💵 कुल प्राप्त फीस", f"₹ {t_fees}/-")
-                    
+                    col_m1.metric("🧒 कुल पंजीकृत मरीज (Total Patients)", t_patients)
+                    col_m2.metric("💵 कुल प्राप्त फीस (Total Fees Received)", f"₹ {t_fees}/-")
+
                     if not filtered_df.empty:
                         csv = filtered_df.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            label="📥 रिपोर्ट Excel (CSV) डाउनलोड करें",
+                            label="📥 रिपोर्ट Excel (CSV) डाउनलोड करें (Download CSV)",
                             data=csv,
                             file_name=f'Clinic_Report_{admin_view}_{today_date}.csv',
                             mime='text/csv',
                         )
-                    
+
                     st.write("---")
                     cols_to_show = [c for c in ['ID', 'Child Name', 'Parent Name', 'Age', 'Condition', 'Mobile', 'Date', 'Fees', 'Total Fees', 'Center', 'Patient Type'] if c in filtered_df.columns]
                     if not filtered_df.empty:
                         st.dataframe(filtered_df[cols_to_show].reset_index(drop=True), use_container_width=True)
                         st.download_button(
-                            label="📄 रिपोर्ट PDF डाउनलोड करें",
+                            label="📄 रिपोर्ट PDF डाउनलोड करें (Download PDF)",
                             data=generate_table_pdf(f"Clinic Report - {admin_view} - {today_date}", filtered_df[cols_to_show].reset_index(drop=True), cols_to_show),
                             file_name=f'Clinic_Report_{admin_view}_{today_date}.pdf',
                             mime='application/pdf',
                         )
-                    else: st.info("💡 चयनित क्राइटेरिया के लिए कोई मरीज रिकॉर्ड मौजूद नहीं है।")
-                else: st.info("💡 इस व्यू मोड पर कोई डेटा नहीं मिला।")
-            else: st.error("❌ डेटाबेस लोड करने में समस्या आ रही है।")
+                    else: st.info("💡 चयनित क्राइटेरिया के लिए कोई मरीज रिकॉर्ड मौजूद नहीं है। (No matching patient records.)")
+                else: st.info("💡 इस व्यू मोड पर कोई डेटा नहीं मिला। (No data found for this view.)")
+            else: st.error("❌ डेटाबेस लोड करने में समस्या आ रही है। (Problem loading database.)")
         with tab_report2:
-            st.markdown("### 📅 स्टाफ वाइज मंथली अटेंडेंस कैलकुलेटर")
+            st.markdown("### 📅 स्टाफ वाइज मंथली अटेंडेंस कैलकुलेटर (Staff-wise Monthly Attendance)")
             staff_data_df = load_cloud_data_fast("Staff")
             att_data_df = load_cloud_data_fast("Attendance")
-            
+
             if 'Staff_ID' not in att_data_df.columns:
-                st.error("⚠️ अटेंडेंस शीट में 'Staff_ID' कॉलम नहीं मिल रहा। कृपया अपनी Google Sheet में हेडर चेक करें।")
+                st.error("⚠️ अटेंडेंस शीट में 'Staff_ID' कॉलम नहीं मिल रहा। कृपया अपनी Google Sheet में हेडर चेक करें। ('Staff_ID' column not found in Attendance sheet — please check headers.)")
             elif staff_data_df.empty or att_data_df.empty:
-                st.info("💡 अभी सिस्टम में स्टाफ या अटेंडेंस का कोई रिकॉर्ड उपलब्ध नहीं है।")
+                st.info("💡 अभी सिस्टम में स्टाफ या अटेंडेंस का कोई रिकॉर्ड उपलब्ध नहीं है। (No staff or attendance records yet.)")
             else:
                 col_y1, col_y2 = st.columns(2)
                 with col_y1:
                     current_year = datetime.today().year
                     year_options = [str(y) for y in range(current_year - 2, current_year + 2)]
-                    selected_year = st.selectbox("📅 साल चुनें:", year_options, index=year_options.index(str(current_year)))
+                    selected_year = st.selectbox("📅 साल चुनें (Select Year):", year_options, index=year_options.index(str(current_year)))
                 with col_y2:
                     months_list = [("January", "01"), ("February", "02"), ("March", "03"), ("April", "04"), ("May", "05"), ("June", "06"), ("July", "07"), ("August", "08"), ("September", "09"), ("October", "10"), ("November", "11"), ("December", "12")]
-                    selected_month_label = st.selectbox("📆 महीना चुनें:", [m[0] for m in months_list], index=int(datetime.today().month)-1)
+                    selected_month_label = st.selectbox("📆 महीना चुनें (Select Month):", [m[0] for m in months_list], index=int(datetime.today().month)-1)
                     selected_month_num = next(m[1] for m in months_list if m[0] == selected_month_label)
                 target_month_str = f"{selected_year}-{selected_month_num}"
                 month_year_label = f"{selected_month_label} {selected_year}"
                 if admin_view == "सभी सेंटर्स (All Centers)": filtered_staff = staff_data_df.copy()
                 else: filtered_staff = staff_data_df[staff_data_df['Center'] == admin_view]
-                if filtered_staff.empty: st.warning(f"⚠️ चयनित व्यू ({admin_view}) में कोई स्टाफ सदस्य पंजीकृत नहीं है।")
+                if filtered_staff.empty: st.warning(f"⚠️ चयनित व्यू ({admin_view}) में कोई स्टाफ सदस्य पंजीकृत नहीं है। (No staff registered for this view.)")
                 else:
                     summary_rows = []
                     for _, s_row in filtered_staff.iterrows():
@@ -1505,22 +1505,22 @@ if st.session_state['logged_in']:
                         summary_rows.append({"Staff ID": s_id, "Staff Name": s_row['Name'], "Role": s_row['Role'], "Center": s_row['Center'], "Total Present (दिन)": p_count, "Total Absent (दिन)": a_count, "Total Leave (दिन)": l_count, "Month-Year": month_year_label})
                     summary_df = pd.DataFrame(summary_rows)
                     sheet_synced = sync_monthly_attendance_to_sheet(sh, summary_df, month_year_label, admin_view)
-                    if sheet_synced: st.success(f"📊 {month_year_label} की रिपोर्ट लाइव सिंक हो गई है!")
+                    if sheet_synced: st.success(f"📊 {month_year_label} की रिपोर्ट लाइव सिंक हो गई है! (Report synced!)")
                     
                     # --- EXPORT BUTTON FOR STAFF ---
                     if not summary_df.empty:
                         csv_staff = summary_df.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            label="📥 स्टाफ रिपोर्ट Excel (CSV) डाउनलोड करें",
+                            label="📥 स्टाफ रिपोर्ट Excel (CSV) डाउनलोड करें (Download CSV)",
                             data=csv_staff,
                             file_name=f'Staff_Report_{admin_view}_{target_month_str}.csv',
                             mime='text/csv',
                         )
-                    
+
                     st.dataframe(summary_df.reset_index(drop=True), use_container_width=True)
 
         with tab_report3:
-            st.markdown("### 🧑‍⚕️ डॉक्टर-वार परफॉर्मेंस रिपोर्ट")
+            st.markdown("### 🧑‍⚕️ डॉक्टर-वार परफॉर्मेंस रिपोर्ट (Doctor-wise Performance)")
             doc_patients_df = load_cloud_data_fast("Patients")
             if admin_view == "सभी सेंटर्स (All Centers)":
                 doc_center_df = doc_patients_df
@@ -1528,20 +1528,20 @@ if st.session_state['logged_in']:
                 doc_center_df = doc_patients_df[doc_patients_df['Center'] == admin_view] if not doc_patients_df.empty else pd.DataFrame()
 
             if doc_center_df.empty or 'Doctor' not in doc_center_df.columns:
-                st.info("💡 अभी तक किसी मरीज एंट्री में डॉक्टर दर्ज नहीं है।")
+                st.info("💡 अभी तक किसी मरीज एंट्री में डॉक्टर दर्ज नहीं है। (No doctor recorded on any patient entry yet.)")
             else:
-                doc_period = st.selectbox("📅 अवधि चुनें:", ["इस महीने (This Month)", "शुरू से अब तक (All Time)"], key="doc_perf_period")
+                doc_period = st.selectbox("📅 अवधि चुनें (Select Period):", ["इस महीने (This Month)", "शुरू से अब तक (All Time)"], key="doc_perf_period")
                 doc_df = doc_center_df
                 if doc_period == "इस महीने (This Month)":
                     doc_df = doc_center_df[doc_center_df['Date'].astype(str).str.startswith(today_date[:7])]
                 doc_df = doc_df[doc_df['Doctor'].astype(str).str.strip().str.len() > 0]
                 doc_df = doc_df[~doc_df['Doctor'].astype(str).str.startswith("N/A")]
                 if doc_df.empty:
-                    st.info("💡 चयनित अवधि के लिए कोई डेटा नहीं मिला।")
+                    st.info("💡 चयनित अवधि के लिए कोई डेटा नहीं मिला। (No data found for this period.)")
                 else:
-                    doc_summary = doc_df.groupby('Doctor').agg(**{"कुल मरीज": ('ID', 'count'), "कुल फीस (₹)": ('Fees', 'sum')}).reset_index().sort_values("कुल मरीज", ascending=False)
+                    doc_summary = doc_df.groupby('Doctor').agg(**{"कुल मरीज (Total Patients)": ('ID', 'count'), "कुल फीस (Total Fees) (₹)": ('Fees', 'sum')}).reset_index().sort_values("कुल मरीज (Total Patients)", ascending=False)
                     st.dataframe(doc_summary, use_container_width=True, hide_index=True)
-                    st.bar_chart(doc_summary.set_index('Doctor')["कुल मरीज"])
+                    st.bar_chart(doc_summary.set_index('Doctor')["कुल मरीज (Total Patients)"])
 
         with tab_report4:
             st.markdown("### ⏳ बकाया फीस ट्रैकर (Pending/Due Fees)")
@@ -1552,21 +1552,21 @@ if st.session_state['logged_in']:
                 due_center_df = due_patients_df[due_patients_df['Center'] == admin_view] if not due_patients_df.empty else pd.DataFrame()
 
             if due_center_df.empty or 'Total Charge' not in due_center_df.columns:
-                st.info("💡 कोई मरीज डेटा उपलब्ध नहीं है।")
+                st.info("💡 कोई मरीज डेटा उपलब्ध नहीं है। (No patient data available.)")
             else:
                 effective_charge = due_center_df['Total Charge'].where(due_center_df['Total Charge'] > 0, due_center_df['Fees'])
-                due_center_df = due_center_df.assign(**{"बकाया राशि (₹)": (effective_charge - due_center_df['Fees']).clip(lower=0)})
-                due_only_df = due_center_df[due_center_df["बकाया राशि (₹)"] > 0]
+                due_center_df = due_center_df.assign(**{"बकाया राशि (Due Amount) (₹)": (effective_charge - due_center_df['Fees']).clip(lower=0)})
+                due_only_df = due_center_df[due_center_df["बकाया राशि (Due Amount) (₹)"] > 0]
                 if due_only_df.empty:
-                    st.success("🎉 सभी मरीजों की फीस पूरी वसूल हो चुकी है, कोई बकाया नहीं है!")
+                    st.success("🎉 सभी मरीजों की फीस पूरी वसूल हो चुकी है, कोई बकाया नहीं है! (All fees collected, no dues!)")
                 else:
-                    st.metric("कुल बकाया राशि", f"₹ {int(due_only_df['बकाया राशि (₹)'].sum())}/-")
-                    cols_due = [c for c in ['ID', 'Child Name', 'Parent Name', 'Mobile', 'Center', 'Date', 'Fees', 'Total Charge', 'बकाया राशि (₹)'] if c in due_only_df.columns]
-                    st.dataframe(due_only_df[cols_due].sort_values("बकाया राशि (₹)", ascending=False).reset_index(drop=True), use_container_width=True)
+                    st.metric("कुल बकाया राशि (Total Due Amount)", f"₹ {int(due_only_df['बकाया राशि (Due Amount) (₹)'].sum())}/-")
+                    cols_due = [c for c in ['ID', 'Child Name', 'Parent Name', 'Mobile', 'Center', 'Date', 'Fees', 'Total Charge', 'बकाया राशि (Due Amount) (₹)'] if c in due_only_df.columns]
+                    st.dataframe(due_only_df[cols_due].sort_values("बकाया राशि (Due Amount) (₹)", ascending=False).reset_index(drop=True), use_container_width=True)
 
         with tab_report5:
-            st.markdown("### 📉 फॉलो-अप / ड्रॉपआउट ट्रैकर")
-            st.caption("जो 'पुराने मरीज (Old Patient)' पिछले N दिनों में दोबारा नहीं आए, उनकी सूची।")
+            st.markdown("### 📉 फॉलो-अप / ड्रॉपआउट ट्रैकर (Follow-up/Dropout Tracker)")
+            st.caption("जो 'पुराने मरीज (Old Patient)' पिछले N दिनों में दोबारा नहीं आए, उनकी सूची। (List of old patients who haven't returned in N days.)")
             drop_patients_df = load_cloud_data_fast("Patients")
             if admin_view == "सभी सेंटर्स (All Centers)":
                 drop_center_df = drop_patients_df
@@ -1574,18 +1574,18 @@ if st.session_state['logged_in']:
                 drop_center_df = drop_patients_df[drop_patients_df['Center'] == admin_view] if not drop_patients_df.empty else pd.DataFrame()
 
             if drop_center_df.empty or 'Patient Type' not in drop_center_df.columns:
-                st.info("💡 कोई मरीज डेटा उपलब्ध नहीं है।")
+                st.info("💡 कोई मरीज डेटा उपलब्ध नहीं है। (No patient data available.)")
             else:
-                dropout_days = st.slider("कितने दिनों से नहीं आया मरीज मानें (Dropout Threshold):", min_value=7, max_value=90, value=30, step=1)
+                dropout_days = st.slider("कितने दिनों से नहीं आया मरीज मानें (Dropout Threshold - Days):", min_value=7, max_value=90, value=30, step=1)
                 drop_center_df = drop_center_df.copy()
                 drop_center_df['_ParsedDate'] = pd.to_datetime(drop_center_df['Date'], format='%Y-%m-%d', errors='coerce')
                 last_visit = drop_center_df.groupby(['Child Name', 'Parent Name', 'Mobile', 'Center'])['_ParsedDate'].max().reset_index()
                 last_visit['दिन हुए (Days Since Last Visit)'] = (pd.Timestamp(datetime.today().date()) - last_visit['_ParsedDate']).dt.days
                 dropout_list = last_visit[last_visit['दिन हुए (Days Since Last Visit)'] >= dropout_days].sort_values('दिन हुए (Days Since Last Visit)', ascending=False)
                 if dropout_list.empty:
-                    st.success("🎉 फिलहाल कोई मरीज ड्रॉपआउट लिस्ट में नहीं है!")
+                    st.success("🎉 फिलहाल कोई मरीज ड्रॉपआउट लिस्ट में नहीं है! (No dropouts currently!)")
                 else:
-                    st.warning(f"⚠️ {len(dropout_list)} मरीज पिछले {dropout_days} दिनों से नहीं आए।")
+                    st.warning(f"⚠️ {len(dropout_list)} मरीज पिछले {dropout_days} दिनों से नहीं आए। ({len(dropout_list)} patients haven't visited in {dropout_days} days.)")
                     show_cols = ['Child Name', 'Parent Name', 'Mobile', 'Center', 'दिन हुए (Days Since Last Visit)']
                     st.dataframe(dropout_list[show_cols].reset_index(drop=True), use_container_width=True)
 
@@ -1598,7 +1598,7 @@ if st.session_state['logged_in']:
                 trend_center_df = trend_patients_df[trend_patients_df['Center'] == admin_view] if not trend_patients_df.empty else pd.DataFrame()
 
             if trend_center_df.empty:
-                st.info("💡 कोई मरीज डेटा उपलब्ध नहीं है।")
+                st.info("💡 कोई मरीज डेटा उपलब्ध नहीं है। (No patient data available.)")
             else:
                 trend_center_df = trend_center_df.copy()
                 trend_center_df['_ParsedDate'] = pd.to_datetime(trend_center_df['Date'], format='%Y-%m-%d', errors='coerce')
@@ -1607,7 +1607,7 @@ if st.session_state['logged_in']:
                 trend_center_df['तिमाही'] = "Q" + trend_center_df['_ParsedDate'].dt.quarter.astype(str)
                 trend_center_df['महीना'] = trend_center_df['_ParsedDate'].dt.strftime('%Y-%m')
 
-                comp_mode = st.radio("तुलना मोड चुनें:", ["महीना-वार (Monthly)", "तिमाही-वार (Quarterly)", "साल-वार (Yearly)"], horizontal=True)
+                comp_mode = st.radio("तुलना मोड चुनें (Select Comparison Mode):", ["महीना-वार (Monthly)", "तिमाही-वार (Quarterly)", "साल-वार (Yearly)"], horizontal=True)
                 if comp_mode == "महीना-वार (Monthly)":
                     group_col = 'महीना'
                 elif comp_mode == "तिमाही-वार (Quarterly)":
@@ -1616,10 +1616,10 @@ if st.session_state['logged_in']:
                 else:
                     group_col = 'साल'
 
-                comp_summary = trend_center_df.groupby(group_col).agg(**{"कुल मरीज": ('ID', 'count'), "कुल कलेक्शन (₹)": ('Fees', 'sum')}).reset_index().sort_values(group_col)
+                comp_summary = trend_center_df.groupby(group_col).agg(**{"कुल मरीज (Total Patients)": ('ID', 'count'), "कुल कलेक्शन (Total Collection) (₹)": ('Fees', 'sum')}).reset_index().sort_values(group_col)
                 st.dataframe(comp_summary, use_container_width=True, hide_index=True)
-                st.line_chart(comp_summary.set_index(group_col)["कुल कलेक्शन (₹)"])
-                st.bar_chart(comp_summary.set_index(group_col)["कुल मरीज"])
+                st.line_chart(comp_summary.set_index(group_col)["कुल कलेक्शन (Total Collection) (₹)"])
+                st.bar_chart(comp_summary.set_index(group_col)["कुल मरीज (Total Patients)"])
 
     elif menu == "🔑 पासवर्ड व क्लिनिक मैनेजर (Password & Clinic Manager)":
         st.markdown("<h2>🔑 पासवर्ड व सेंटर मैनेजमेंट</h2>", unsafe_allow_html=True)
