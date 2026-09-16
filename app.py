@@ -10,6 +10,8 @@ import secrets
 import logging
 import calendar
 import io
+import re
+import urllib.parse
 import pyotp
 import qrcode
 from fpdf import FPDF
@@ -18,10 +20,13 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("clinic_app")
 
 # --- 🧾 PDF हेल्पर्स ---
-# ध्यान दें: fpdf2 के डिफ़ॉल्ट फॉन्ट में हिंदी (Devanagari) सपोर्ट नहीं है, इसलिए PDF में
-# सिर्फ Latin-1 वर्ण दिखेंगे — हिंदी टेक्स्ट अपने-आप हट जाएगा। नाम/डेटा अंग्रेज़ी में सही दिखेंगे।
+# PDF हमेशा पूरी तरह अंग्रेज़ी में रहती है: हिंदी वर्ण हटा दिए जाते हैं, और उसके बाद बचे
+# खाली कोष्ठक/डबल-स्पेस भी साफ कर दिए जाते हैं ताकि "Autism ()" जैसा अधूरा टेक्स्ट न दिखे।
 def _pdf_safe(text):
-    return str(text).encode('latin-1', 'ignore').decode('latin-1').strip()
+    s = str(text).encode('latin-1', 'ignore').decode('latin-1')
+    s = re.sub(r'\(\s*\)', '', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
 
 def generate_receipt_pdf(data):
     pdf = FPDF()
@@ -93,6 +98,74 @@ def generate_table_pdf(title, df, columns):
             pdf.cell(col_width, 7, _pdf_safe(row[col])[:24], border=1)
         pdf.ln()
     return bytes(pdf.output())
+
+# --- 📲 WhatsApp मैसेज हेल्पर ---
+def _clean_whatsapp_number(mobile):
+    digits = ''.join(ch for ch in str(mobile) if ch.isdigit())
+    if len(digits) == 10:
+        digits = "91" + digits
+    return digits
+
+def build_whatsapp_url(mobile, message):
+    number = _clean_whatsapp_number(mobile)
+    return f"https://wa.me/{number}?text={urllib.parse.quote(message)}"
+
+def render_whatsapp_sender(data, key_prefix):
+    st.markdown("**📲 WhatsApp मैसेज भेजें**")
+    template_choice = st.selectbox(
+        "टेम्पलेट चुनें:",
+        ["Appointment Confirmation", "Fees Receipt", "Next Follow-up Reminder"],
+        key=f"{key_prefix}_wa_template",
+    )
+    child_name = data.get('Child Name', '')
+    parent_name = data.get('Parent Name', '')
+    center = data.get('Center', '')
+    date_str = data.get('Date', '')
+    doctor = data.get('Doctor', '')
+    try:
+        fees = int(data.get('Fees', 0) or 0)
+    except (TypeError, ValueError):
+        fees = 0
+    try:
+        total_charge = int(data.get('Total Charge', fees) or fees)
+    except (TypeError, ValueError):
+        total_charge = fees
+    due = max(0, total_charge - fees)
+
+    if template_choice == "Next Follow-up Reminder":
+        followup_date = st.date_input("अगली फॉलो-अप तारीख:", datetime.today() + timedelta(days=7), key=f"{key_prefix}_followup_date")
+        message = (
+            f"Hello {parent_name},\n\n"
+            f"This is a reminder from Normal Child Clinic ({center}) for {child_name}'s next follow-up visit "
+            f"on {followup_date.strftime('%d-%b-%Y')}.\n\n"
+            f"Please arrive 10 minutes early.\n\nThank you!"
+        )
+    elif template_choice == "Fees Receipt":
+        payment_line = f"Balance Due: Rs. {due}" if due > 0 else "Payment Status: Fully Paid"
+        message = (
+            f"Hello {parent_name},\n\n"
+            f"Thank you for visiting Normal Child Clinic ({center}) on {date_str}.\n"
+            f"Patient: {child_name}\n"
+            f"Doctor: {doctor}\n"
+            f"Amount Paid: Rs. {fees}\n"
+            f"{payment_line}\n\n"
+            f"Thank you for choosing us!"
+        )
+    else:
+        message = (
+            f"Hello {parent_name},\n\n"
+            f"This is to confirm {child_name}'s appointment at Normal Child Clinic ({center}) on {date_str}.\n"
+            f"Doctor: {doctor}\n\nSee you soon!"
+        )
+
+    mobile = str(data.get('Mobile', '')).strip()
+    with st.expander("मैसेज प्रीव्यू देखें"):
+        st.text(message)
+
+    if _clean_whatsapp_number(mobile):
+        st.link_button("📲 WhatsApp पर भेजें", build_whatsapp_url(mobile, message), key=f"{key_prefix}_wa_send")
+    else:
+        st.caption("⚠️ मोबाइल नंबर उपलब्ध नहीं है।")
 
 # --- 🔐 पासवर्ड हैशिंग हेल्पर्स ---
 def hash_password(password):
@@ -1035,13 +1108,17 @@ if st.session_state['logged_in']:
             center_patients = patients_df[patients_df['Center'] == admin_view] if not patients_df.empty else pd.DataFrame()
         with tab_p1:
             if st.session_state.get('last_receipt'):
+                last_receipt_data = st.session_state['last_receipt']
+                st.success(f"✅ {last_receipt_data['Child Name']} का रिकॉर्ड सुरक्षित है — रसीद डाउनलोड करें या WhatsApp पर भेजें:")
                 st.download_button(
                     "🧾 पिछली रसीद PDF डाउनलोड करें",
-                    data=generate_receipt_pdf(st.session_state['last_receipt']),
-                    file_name=f"Receipt_{st.session_state['last_receipt']['ID']}.pdf",
+                    data=generate_receipt_pdf(last_receipt_data),
+                    file_name=f"Receipt_{last_receipt_data['ID']}.pdf",
                     mime="application/pdf",
                     key="last_receipt_download",
                 )
+                render_whatsapp_sender(last_receipt_data, key_prefix="new_patient")
+                st.markdown("---")
             col_p1, col_p2 = st.columns(2)
             with col_p1:
                 c_name = st.text_input("🧒 विशेष बच्चे का नाम:")
@@ -1125,18 +1202,20 @@ if st.session_state['logged_in']:
                         edit_doctor_index = edit_doctor_options.index(current_doctor) if current_doctor in edit_doctor_options else 0
                         edit_p_doctor = st.selectbox("🧑‍⚕️ डॉक्टर बदलें:", edit_doctor_options, index=edit_doctor_index)
 
+                    selected_patient_data = {
+                        'ID': patient_options[selected_pat_label], 'Date': str(pat_data['Date']), 'Center': str(pat_data['Center']),
+                        'Child Name': pat_data['Child Name'], 'Parent Name': pat_data['Parent Name'], 'Mobile': pat_data['Mobile'],
+                        'Age': pat_data['Age'], 'Doctor': current_doctor or '', 'Fees': int(pat_data['Fees']) if 'Fees' in pat_data else 0,
+                        'Total Charge': default_total_charge,
+                    }
                     st.download_button(
                         "🧾 इस मरीज की रसीद PDF (Reprint)",
-                        data=generate_receipt_pdf({
-                            'ID': patient_options[selected_pat_label], 'Date': str(pat_data['Date']), 'Center': str(pat_data['Center']),
-                            'Child Name': pat_data['Child Name'], 'Parent Name': pat_data['Parent Name'], 'Mobile': pat_data['Mobile'],
-                            'Age': pat_data['Age'], 'Doctor': current_doctor or '', 'Fees': int(pat_data['Fees']) if 'Fees' in pat_data else 0,
-                            'Total Charge': default_total_charge,
-                        }),
+                        data=generate_receipt_pdf(selected_patient_data),
                         file_name=f"Receipt_{patient_options[selected_pat_label]}.pdf",
                         mime="application/pdf",
                         key="reprint_receipt_download",
                     )
+                    render_whatsapp_sender(selected_patient_data, key_prefix=f"edit_patient_{patient_options[selected_pat_label]}")
 
                     col_upd, col_del = st.columns(2)
                     with col_upd:
