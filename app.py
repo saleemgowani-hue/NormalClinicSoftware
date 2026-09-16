@@ -510,6 +510,18 @@ if st.session_state['logged_in']:
 
         st.markdown(f"<p style='margin-top:14px;'>👥 <b>आज की हाजिरी:</b> ✅ उपस्थित {present_count} &nbsp;|&nbsp; ❌ अनुपस्थित {absent_count} &nbsp;|&nbsp; 🌴 अवकाश {leave_count}</p>", unsafe_allow_html=True)
 
+        # --- 🔔 अलर्ट: कम कलेक्शन / कम हाजिरी ---
+        alert_last_7_dates = [(datetime.today() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(1, 8)]
+        avg_recent_collection = 0
+        if not center_patients_all.empty:
+            recent_alert_df = center_patients_all[center_patients_all['Date'].isin(alert_last_7_dates)]
+            if not recent_alert_df.empty:
+                avg_recent_collection = recent_alert_df['Fees'].sum() / 7
+        if datetime.now().hour >= 14 and avg_recent_collection > 0 and total_fees_collected < avg_recent_collection * 0.5:
+            st.warning(f"⚠️ आज का कलेक्शन (₹{int(total_fees_collected)}) पिछले 7 दिनों की औसत (₹{int(avg_recent_collection)}/दिन) से काफी कम है — ध्यान दें।")
+        if total_marked > 0 and attendance_pct < 70:
+            st.warning(f"⚠️ आज स्टाफ हाजिरी सिर्फ {attendance_pct}% है — सामान्य से कम, कृपया जांच करें।")
+
         if admin_view == "सभी सेंटर्स (All Centers)" and actual_centers:
             st.write("---")
             st.markdown("### 🏥 सेंटर-वाइज तुलना")
