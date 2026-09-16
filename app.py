@@ -167,6 +167,23 @@ def render_whatsapp_sender(data, key_prefix):
     else:
         st.caption("⚠️ मोबाइल नंबर उपलब्ध नहीं है।")
 
+def render_appointment_whatsapp(name, mobile, center, date_str, time_slot, token):
+    message = (
+        f"Hello {name},\n\n"
+        f"Your appointment at Normal Child Clinic ({center}) is confirmed.\n"
+        f"Date: {date_str}\n"
+        f"Time: {time_slot}\n"
+        f"Token No: {token}\n\n"
+        f"Please arrive 10 minutes early. Thank you!"
+    )
+    st.markdown("**📲 WhatsApp पर अपॉइंटमेंट डिटेल भेजें**")
+    with st.expander("मैसेज प्रीव्यू देखें"):
+        st.text(message)
+    if _clean_whatsapp_number(mobile):
+        st.link_button("📲 WhatsApp पर भेजें", build_whatsapp_url(mobile, message), key=f"appt_wa_{token}_{mobile}")
+    else:
+        st.caption("⚠️ मोबाइल नंबर उपलब्ध नहीं है।")
+
 # --- 🔐 पासवर्ड हैशिंग हेल्पर्स ---
 def hash_password(password):
     salt = secrets.token_hex(16)
@@ -1776,17 +1793,41 @@ if st.session_state['logged_in']:
         time_slots = ["09:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "11:00 AM - 12:00 PM", "12:00 PM - 01:00 PM", "02:00 PM - 03:00 PM", "03:00 PM - 04:00 PM", "04:00 PM - 05:00 PM", "05:00 PM - 06:00 PM"]
 
         with tab_ap1:
+            if st.session_state.get('last_appointment'):
+                last_appt = st.session_state['last_appointment']
+                st.success(f"🎉 {last_appt['Name']} की अपॉइंटमेंट बुक हो गई! टोकन नंबर: #{last_appt['Token']} — WhatsApp पर भेजें:")
+                render_appointment_whatsapp(last_appt['Name'], last_appt['Mobile'], last_appt['Center'], last_appt['Date'], last_appt['Time Slot'], last_appt['Token'])
+                st.markdown("---")
+
+            if selected_center == "HR_Admin":
+                ap_center = st.selectbox("🎯 सेंटर चुनें:", actual_centers, key="ap_center")
+            else:
+                ap_center = selected_center
+
+            patients_for_appt = load_cloud_data_fast("Patients")
+            center_registered_patients = patients_for_appt[patients_for_appt['Center'] == ap_center] if not patients_for_appt.empty else pd.DataFrame()
+            unique_patients = center_registered_patients.drop_duplicates(subset=['Child Name', 'Mobile']) if not center_registered_patients.empty else pd.DataFrame()
+
+            entry_mode = st.radio("मरीज कैसे चुनें:", ["📋 रजिस्टर्ड मरीज चुनें", "✍️ नया नाम टाइप करें"], horizontal=True, key="ap_entry_mode")
+
             col_a1, col_a2 = st.columns(2)
             with col_a1:
-                ap_name = st.text_input("🧒 बच्चे/मरीज का नाम:")
-                ap_mobile = st.text_input("📞 मोबाइल नंबर:", max_chars=10)
-                if selected_center == "HR_Admin":
-                    ap_center = st.selectbox("🎯 सेंटर चुनें:", actual_centers, key="ap_center")
+                if entry_mode == "📋 रजिस्टर्ड मरीज चुनें":
+                    if unique_patients.empty:
+                        st.info("इस सेंटर में अभी कोई रजिस्टर्ड मरीज नहीं है। 'नया नाम टाइप करें' चुनें।")
+                        ap_name, ap_mobile = "", ""
+                    else:
+                        patient_search_options = {f"{r['Child Name']} - {r['Mobile']}": (r['Child Name'], r['Mobile']) for _, r in unique_patients.iterrows()}
+                        selected_patient_label = st.selectbox("🔍 मरीज खोजें/चुनें (टाइप करके सर्च करें):", list(patient_search_options.keys()), key="ap_patient_select")
+                        ap_name, ap_mobile = patient_search_options[selected_patient_label]
+                        st.caption(f"📞 मोबाइल: {ap_mobile}")
                 else:
-                    ap_center = selected_center
+                    ap_name = st.text_input("🧒 बच्चे/मरीज का नाम:", key="ap_manual_name")
+                    ap_mobile = st.text_input("📞 मोबाइल नंबर:", max_chars=10, key="ap_manual_mobile")
             with col_a2:
                 ap_date = st.date_input("📆 अपॉइंटमेंट तारीख:", datetime.today(), key="ap_date")
                 ap_slot = st.selectbox("⏰ टाइम स्लॉट चुनें:", time_slots)
+
             if st.button("🎯 अपॉइंटमेंट बुक करें"):
                 if not ap_name or not ap_mobile:
                     st.warning("⚠️ कृपया नाम और मोबाइल नंबर भरें।")
@@ -1806,8 +1847,11 @@ if st.session_state['logged_in']:
                     next_token = max(same_day_tokens) + 1 if same_day_tokens else 1
                     ap_sheet.append_row([next_ap_id, next_token, ap_name, str(ap_mobile), ap_center, ap_date_str, ap_slot, "Booked"])
                     log_audit(current_actor(), "Book Appointment", f"{ap_name} ({ap_center}) - {ap_date_str} {ap_slot}, Token #{next_token}")
+                    st.session_state['last_appointment'] = {
+                        'Name': ap_name, 'Mobile': str(ap_mobile), 'Center': ap_center,
+                        'Date': ap_date_str, 'Time Slot': ap_slot, 'Token': next_token,
+                    }
                     st.cache_data.clear()
-                    st.success(f"🎉 अपॉइंटमेंट बुक हो गई! आपका टोकन नंबर है: #{next_token}")
                     st.rerun()
 
         with tab_ap2:
