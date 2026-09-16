@@ -557,7 +557,7 @@ if st.session_state['logged_in']:
 
     elif menu == "👥 स्टाफ मैनेजमेंट (HR & Staff)":
         st.markdown("<h2>👥 स्टाफ मैनेजमेंट पोर्टल</h2>", unsafe_allow_html=True)
-        tab1, tab2, tab3, tab4 = st.tabs(["➕ नया कर्मचारी जोड़ें", "📋 वर्तमान स्टाफ सूची देखें", "✏️ स्टाफ एडिट करें", "🧾 सैलरी स्लिप"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["➕ नया कर्मचारी जोड़ें", "📋 वर्तमान स्टाफ सूची देखें", "✏️ स्टाफ एडिट करें", "🧾 सैलरी स्लिप", "🌴 लीव मैनेजमेंट"])
         staff_df = load_cloud_data_fast("Staff")
         with tab1:
             col_s1, col_s2 = st.columns(2)
@@ -716,6 +716,124 @@ if st.session_state['logged_in']:
                             file_name=f"SalarySlip_{slip_staff_row['Name']}_{target_month_str}.pdf",
                             mime="application/pdf",
                         )
+
+        with tab5:
+            st.markdown("### 🌴 लीव एप्लीकेशन व अप्रूवल")
+            leave_tab1, leave_tab2 = st.tabs(["📝 नई लीव एप्लीकेशन", "✅ अप्रूव / रिजेक्ट करें"])
+
+            with leave_tab1:
+                if staff_df.empty:
+                    st.info("कोई स्टाफ डेटा उपलब्ध नहीं है।")
+                else:
+                    if admin_view == "सभी सेंटर्स (All Centers)":
+                        leave_staff_pool = staff_df
+                    else:
+                        leave_staff_pool = staff_df[staff_df['Center'] == admin_view]
+
+                    if leave_staff_pool.empty:
+                        st.info("इस फ़िल्टर पर कोई स्टाफ नहीं है।")
+                    else:
+                        leave_options = {f"{r['Name']} ({r['Role']}, {r['Center']}) - ID {r['ID']}": r['ID'] for _, r in leave_staff_pool.iterrows()}
+                        leave_selected_label = st.selectbox("स्टाफ चुनें:", list(leave_options.keys()), key="leave_apply_staff")
+                        leave_staff_row = staff_df[staff_df['ID'] == leave_options[leave_selected_label]].iloc[0]
+
+                        col_lv1, col_lv2 = st.columns(2)
+                        with col_lv1:
+                            leave_from = st.date_input("लीव शुरू तारीख:", datetime.today(), key="leave_from")
+                        with col_lv2:
+                            leave_to = st.date_input("लीव खत्म तारीख:", datetime.today(), key="leave_to")
+                        leave_reason = st.text_input("कारण (Reason):", key="leave_reason")
+
+                        if st.button("📤 लीव एप्लीकेशन सबमिट करें"):
+                            if leave_to < leave_from:
+                                st.warning("⚠️ End date, start date से पहले नहीं हो सकती।")
+                            else:
+                                try:
+                                    leave_sheet = sh.worksheet("Leave_Requests")
+                                except Exception:
+                                    leave_sheet = sh.add_worksheet(title="Leave_Requests", rows="1000", cols="9")
+                                    leave_sheet.update(range_name="A1:I1", values=[["ID", "Staff ID", "Staff Name", "Center", "From Date", "To Date", "Reason", "Status", "Applied On"]])
+                                all_leave_rows = leave_sheet.get_all_values()
+                                existing_leave_ids = [int(r[0]) for r in all_leave_rows[1:] if r and str(r[0]).strip().isdigit()]
+                                next_leave_id = max(existing_leave_ids) + 1 if existing_leave_ids else 1
+                                leave_sheet.append_row([
+                                    next_leave_id, int(leave_staff_row['ID']), leave_staff_row['Name'], leave_staff_row['Center'],
+                                    leave_from.strftime('%Y-%m-%d'), leave_to.strftime('%Y-%m-%d'), leave_reason, "Pending", today_date
+                                ])
+                                log_audit(selected_center, "Apply Leave", f"{leave_staff_row['Name']} ({leave_from} to {leave_to})")
+                                st.cache_data.clear()
+                                st.success("🎉 लीव एप्लीकेशन सबमिट हो गई है, अप्रूवल का इंतज़ार है।")
+                                st.rerun()
+
+            with leave_tab2:
+                leave_requests_df = load_cloud_data_fast("Leave_Requests")
+                if admin_view == "सभी सेंटर्स (All Centers)":
+                    view_leave_df = leave_requests_df
+                else:
+                    view_leave_df = leave_requests_df[leave_requests_df['Center'] == admin_view] if not leave_requests_df.empty and 'Center' in leave_requests_df.columns else pd.DataFrame()
+
+                if view_leave_df.empty:
+                    st.info("कोई लीव एप्लीकेशन उपलब्ध नहीं है।")
+                else:
+                    pending_df = view_leave_df[view_leave_df['Status'] == 'Pending']
+                    st.markdown(f"**पेंडिंग एप्लीकेशन: {len(pending_df)}**")
+                    st.dataframe(view_leave_df[['ID', 'Staff Name', 'Center', 'From Date', 'To Date', 'Reason', 'Status']].sort_values('ID', ascending=False).reset_index(drop=True), use_container_width=True)
+
+                    if not pending_df.empty:
+                        st.markdown("---")
+                        st.subheader("✅ पेंडिंग एप्लीकेशन पर एक्शन लें")
+                        leave_action_options = {f"ID {r['ID']} - {r['Staff Name']} ({r['From Date']} to {r['To Date']})": r['ID'] for _, r in pending_df.iterrows()}
+                        leave_action_label = st.selectbox("एप्लीकेशन चुनें:", list(leave_action_options.keys()), key="leave_action_select")
+                        leave_action_row = pending_df[pending_df['ID'] == leave_action_options[leave_action_label]].iloc[0]
+
+                        col_la1, col_la2 = st.columns(2)
+                        with col_la1:
+                            if st.button("✅ अप्रूव करें"):
+                                leave_sheet = sh.worksheet("Leave_Requests")
+                                all_leave_rows = leave_sheet.get_all_values()
+                                target_leave_id = str(leave_action_options[leave_action_label])
+                                row_to_update = next((idx + 2 for idx, r in enumerate(all_leave_rows[1:]) if r and str(r[0]).strip() == target_leave_id), None)
+                                if row_to_update:
+                                    leave_sheet.update_cell(row_to_update, 8, "Approved")
+                                    try:
+                                        att_sheet = sh.worksheet("Attendance")
+                                        att_rows = att_sheet.get_all_values()
+                                        existing_att_ids = [int(r[0]) for r in att_rows[1:] if r and str(r[0]).strip().isdigit()]
+                                        att_id_counter = max(existing_att_ids) + 1 if existing_att_ids else 1
+                                        from_dt = datetime.strptime(str(leave_action_row['From Date']), '%Y-%m-%d')
+                                        to_dt = datetime.strptime(str(leave_action_row['To Date']), '%Y-%m-%d')
+                                        num_days = (to_dt - from_dt).days + 1
+                                        for i in range(num_days):
+                                            d_str = (from_dt + timedelta(days=i)).strftime('%Y-%m-%d')
+                                            existing_row_idx = None
+                                            for r_idx, row in enumerate(att_rows[1:], start=2):
+                                                if len(row) >= 4 and str(row[1]).strip() == str(int(leave_action_row['Staff ID'])) and str(row[3]).strip() == d_str:
+                                                    existing_row_idx = r_idx
+                                                    break
+                                            if existing_row_idx:
+                                                att_sheet.update_cell(existing_row_idx, 5, "Leave")
+                                            else:
+                                                att_sheet.append_row([att_id_counter, int(leave_action_row['Staff ID']), leave_action_row['Staff Name'], d_str, "Leave", leave_action_row['Center']])
+                                                att_rows.append([att_id_counter, int(leave_action_row['Staff ID']), leave_action_row['Staff Name'], d_str, "Leave", leave_action_row['Center']])
+                                                att_id_counter += 1
+                                    except Exception as e:
+                                        logger.warning(f"Attendance auto-mark on leave approval failed: {e}")
+                                    log_audit(selected_center, "Approve Leave", leave_action_label)
+                                    st.cache_data.clear()
+                                    st.success("✅ लीव अप्रूव हो गई और अटेंडेंस अपडेट हो गई!")
+                                    st.rerun()
+                        with col_la2:
+                            if st.button("❌ रिजेक्ट करें"):
+                                leave_sheet = sh.worksheet("Leave_Requests")
+                                all_leave_rows = leave_sheet.get_all_values()
+                                target_leave_id = str(leave_action_options[leave_action_label])
+                                row_to_update = next((idx + 2 for idx, r in enumerate(all_leave_rows[1:]) if r and str(r[0]).strip() == target_leave_id), None)
+                                if row_to_update:
+                                    leave_sheet.update_cell(row_to_update, 8, "Rejected")
+                                    log_audit(selected_center, "Reject Leave", leave_action_label)
+                                    st.cache_data.clear()
+                                    st.success("❌ लीव रिजेक्ट कर दी गई है।")
+                                    st.rerun()
 
     elif menu == "📅 दैनिक हाजिरी (Attendance)":
         st.markdown("<h2>📅 डिजिटल हाजिरी रजिस्टर</h2>", unsafe_allow_html=True)
