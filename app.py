@@ -366,7 +366,7 @@ def connect_to_sheets():
 sh, raw_error = connect_to_sheets()
 
 if sh is None:
-    st.error("❌ Google Sheet से कनेक्शन नहीं हो पाया!")
+    st.error("❌ Google Sheet से कनेक्शन नहीं हो पाया! (Could not connect to Google Sheet!)")
     st.stop()
 
 # --- 🔒 क्लाउड डेटा लोडर ---
@@ -591,7 +591,7 @@ def get_live_passwords():
 PASSWORDS = get_live_passwords()
 
 if not PASSWORDS:
-    st.error("❌ पासवर्ड डेटा लोड नहीं हो सका। कृपया 'Passwords' शीट जांचें और पेज रीलोड करें।")
+    st.error("❌ पासवर्ड डेटा लोड नहीं हो सका। कृपया 'Passwords' शीट जांचें और पेज रीलोड करें। (Could not load password data — check the Passwords sheet and reload.)")
     st.stop()
 
 if banner_file: st.image(banner_file, width=280)
@@ -1617,9 +1617,11 @@ if st.session_state['logged_in']:
                     group_col = 'साल'
 
                 comp_summary = trend_center_df.groupby(group_col).agg(**{"कुल मरीज (Total Patients)": ('ID', 'count'), "कुल कलेक्शन (Total Collection) (₹)": ('Fees', 'sum')}).reset_index().sort_values(group_col)
+                group_col_display = {"महीना": "महीना (Month)", "तिमाही": "तिमाही (Quarter)", "साल": "साल (Year)"}[group_col]
+                comp_summary = comp_summary.rename(columns={group_col: group_col_display})
                 st.dataframe(comp_summary, use_container_width=True, hide_index=True)
-                st.line_chart(comp_summary.set_index(group_col)["कुल कलेक्शन (Total Collection) (₹)"])
-                st.bar_chart(comp_summary.set_index(group_col)["कुल मरीज (Total Patients)"])
+                st.line_chart(comp_summary.set_index(group_col_display)["कुल कलेक्शन (Total Collection) (₹)"])
+                st.bar_chart(comp_summary.set_index(group_col_display)["कुल मरीज (Total Patients)"])
 
     elif menu == "🔑 पासवर्ड व क्लिनिक मैनेजर (Password & Clinic Manager)":
         st.markdown("<h2>🔑 पासवर्ड व सेंटर मैनेजमेंट (Password & Center Management)</h2>", unsafe_allow_html=True)
