@@ -8,9 +8,88 @@ import hashlib
 import hmac
 import secrets
 import logging
+import calendar
+from fpdf import FPDF
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("clinic_app")
+
+# --- 🧾 PDF हेल्पर्स ---
+# ध्यान दें: fpdf2 के डिफ़ॉल्ट फॉन्ट में हिंदी (Devanagari) सपोर्ट नहीं है, इसलिए PDF में
+# सिर्फ Latin-1 वर्ण दिखेंगे — हिंदी टेक्स्ट अपने-आप हट जाएगा। नाम/डेटा अंग्रेज़ी में सही दिखेंगे।
+def _pdf_safe(text):
+    return str(text).encode('latin-1', 'ignore').decode('latin-1').strip()
+
+def generate_receipt_pdf(data):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "Normal Child Clinic - Fee Receipt", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 12)
+    pdf.ln(4)
+    fields = [
+        ("Receipt No", str(data.get('ID', ''))),
+        ("Date", str(data.get('Date', ''))),
+        ("Center", _pdf_safe(data.get('Center', ''))),
+        ("Child Name", _pdf_safe(data.get('Child Name', ''))),
+        ("Parent Name", _pdf_safe(data.get('Parent Name', ''))),
+        ("Mobile", str(data.get('Mobile', ''))),
+        ("Age", str(data.get('Age', ''))),
+        ("Doctor", _pdf_safe(data.get('Doctor', ''))),
+        ("Amount Paid (Rs.)", str(data.get('Fees', ''))),
+        ("Total Charge (Rs.)", str(data.get('Total Charge', data.get('Fees', '')))),
+    ]
+    for label, value in fields:
+        pdf.cell(60, 8, f"{label}:", border=0)
+        pdf.cell(0, 8, value, ln=True)
+    pdf.ln(8)
+    pdf.set_font("Helvetica", "I", 10)
+    pdf.cell(0, 8, "Thank you for visiting!", ln=True, align="C")
+    return bytes(pdf.output())
+
+def generate_salary_slip_pdf(staff_name, role, center, month_label, monthly_salary, present_days, absent_days, leave_days, total_days_in_month):
+    per_day = monthly_salary / total_days_in_month if total_days_in_month else 0
+    payable = round(per_day * present_days)
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "Normal Child Clinic - Salary Slip", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 12)
+    pdf.ln(4)
+    fields = [
+        ("Month", month_label),
+        ("Staff Name", _pdf_safe(staff_name)),
+        ("Role", _pdf_safe(role)),
+        ("Center", _pdf_safe(center)),
+        ("Monthly Salary (Rs.)", str(int(monthly_salary))),
+        ("Days in Month", str(total_days_in_month)),
+        ("Present Days", str(present_days)),
+        ("Absent Days", str(absent_days)),
+        ("Leave Days", str(leave_days)),
+        ("Payable Amount (Rs.)", str(int(payable))),
+    ]
+    for label, value in fields:
+        pdf.cell(70, 8, f"{label}:", border=0)
+        pdf.cell(0, 8, value, ln=True)
+    return bytes(pdf.output())
+
+def generate_table_pdf(title, df, columns):
+    pdf = FPDF(orientation='L')
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, _pdf_safe(title), ln=True, align="C")
+    pdf.ln(2)
+    col_width = 270 / max(len(columns), 1)
+    pdf.set_font("Helvetica", "B", 8)
+    for col in columns:
+        pdf.cell(col_width, 8, _pdf_safe(col)[:22], border=1)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 7)
+    for _, row in df.head(200).iterrows():
+        for col in columns:
+            pdf.cell(col_width, 7, _pdf_safe(row[col])[:24], border=1)
+        pdf.ln()
+    return bytes(pdf.output())
 
 # --- 🔐 पासवर्ड हैशिंग हेल्पर्स ---
 def hash_password(password):
@@ -478,7 +557,7 @@ if st.session_state['logged_in']:
 
     elif menu == "👥 स्टाफ मैनेजमेंट (HR & Staff)":
         st.markdown("<h2>👥 स्टाफ मैनेजमेंट पोर्टल</h2>", unsafe_allow_html=True)
-        tab1, tab2, tab3 = st.tabs(["➕ नया कर्मचारी जोड़ें", "📋 वर्तमान स्टाफ सूची देखें", "✏️ स्टाफ एडिट करें"])
+        tab1, tab2, tab3, tab4 = st.tabs(["➕ नया कर्मचारी जोड़ें", "📋 वर्तमान स्टाफ सूची देखें", "✏️ स्टाफ एडिट करें", "🧾 सैलरी स्लिप"])
         staff_df = load_cloud_data_fast("Staff")
         with tab1:
             col_s1, col_s2 = st.columns(2)
@@ -588,6 +667,56 @@ if st.session_state['logged_in']:
                             st.success("📝 स्टाफ रिकॉर्ड सफलतापूर्वक अपडेट हो गया!")
                             st.rerun()
 
+        with tab4:
+            st.markdown("### 🧾 स्टाफ मासिक सैलरी स्लिप जनरेट करें")
+            if staff_df.empty:
+                st.info("कोई स्टाफ डेटा उपलब्ध नहीं है।")
+            else:
+                if admin_view == "सभी सेंटर्स (All Centers)":
+                    slip_staff_pool = staff_df
+                else:
+                    slip_staff_pool = staff_df[staff_df['Center'] == admin_view]
+
+                if slip_staff_pool.empty:
+                    st.info("इस फ़िल्टर पर कोई स्टाफ नहीं है।")
+                else:
+                    slip_options = {f"{r['Name']} ({r['Role']}, {r['Center']}) - ID {r['ID']}": r['ID'] for _, r in slip_staff_pool.iterrows()}
+                    slip_selected_label = st.selectbox("स्टाफ चुनें:", list(slip_options.keys()), key="slip_staff_select")
+                    slip_staff_row = staff_df[staff_df['ID'] == slip_options[slip_selected_label]].iloc[0]
+
+                    col_sl1, col_sl2 = st.columns(2)
+                    with col_sl1:
+                        slip_year = st.selectbox("साल चुनें:", [str(y) for y in range(datetime.today().year - 2, datetime.today().year + 2)], index=2, key="slip_year")
+                    with col_sl2:
+                        slip_months_list = [("January", 1), ("February", 2), ("March", 3), ("April", 4), ("May", 5), ("June", 6), ("July", 7), ("August", 8), ("September", 9), ("October", 10), ("November", 11), ("December", 12)]
+                        slip_month_label = st.selectbox("महीना चुनें:", [m[0] for m in slip_months_list], index=datetime.today().month - 1, key="slip_month")
+                        slip_month_num = next(m[1] for m in slip_months_list if m[0] == slip_month_label)
+
+                    if st.button("🧾 सैलरी स्लिप जनरेट करें"):
+                        att_for_slip = load_cloud_data_fast("Attendance")
+                        target_month_str = f"{slip_year}-{slip_month_num:02d}"
+                        s_id_str = str(slip_staff_row['ID']).strip()
+                        if not att_for_slip.empty and 'Staff_ID' in att_for_slip.columns:
+                            match_att = att_for_slip[(att_for_slip['Staff_ID'].astype(str).str.strip() == s_id_str) & (att_for_slip['Date'].astype(str).str.startswith(target_month_str))]
+                            present_days = len(match_att[match_att['Status'].str.lower() == 'present'])
+                            absent_days = len(match_att[match_att['Status'].str.lower() == 'absent'])
+                            leave_days = len(match_att[match_att['Status'].str.lower() == 'leave'])
+                        else:
+                            present_days = absent_days = leave_days = 0
+                        total_days_in_month = calendar.monthrange(int(slip_year), slip_month_num)[1]
+                        monthly_salary = int(slip_staff_row['Salary']) if str(slip_staff_row['Salary']).strip().isdigit() else 0
+                        slip_pdf = generate_salary_slip_pdf(
+                            slip_staff_row['Name'], slip_staff_row['Role'], slip_staff_row['Center'],
+                            f"{slip_month_label} {slip_year}", monthly_salary, present_days, absent_days, leave_days, total_days_in_month
+                        )
+                        st.success(f"✅ {slip_month_label} {slip_year} की सैलरी स्लिप तैयार है — उपस्थित: {present_days}, अनुपस्थित: {absent_days}, अवकाश: {leave_days}")
+                        st.download_button(
+                            "📥 सैलरी स्लिप PDF डाउनलोड करें",
+                            data=slip_pdf,
+                            file_name=f"SalarySlip_{slip_staff_row['Name']}_{target_month_str}.pdf",
+                            mime="application/pdf",
+                        )
+
     elif menu == "📅 दैनिक हाजिरी (Attendance)":
         st.markdown("<h2>📅 डिजिटल हाजिरी रजिस्टर</h2>", unsafe_allow_html=True)
         staff_df = load_cloud_data_fast("Staff")
@@ -653,6 +782,14 @@ if st.session_state['logged_in']:
         else:
             center_patients = patients_df[patients_df['Center'] == admin_view] if not patients_df.empty else pd.DataFrame()
         with tab_p1:
+            if st.session_state.get('last_receipt'):
+                st.download_button(
+                    "🧾 पिछली रसीद PDF डाउनलोड करें",
+                    data=generate_receipt_pdf(st.session_state['last_receipt']),
+                    file_name=f"Receipt_{st.session_state['last_receipt']['ID']}.pdf",
+                    mime="application/pdf",
+                    key="last_receipt_download",
+                )
             col_p1, col_p2 = st.columns(2)
             with col_p1:
                 c_name = st.text_input("🧒 विशेष बच्चे का नाम:")
@@ -687,6 +824,11 @@ if st.session_state['logged_in']:
                     log_audit(selected_center, "Add Patient", f"{c_name} s/o {p_name} added to {p_target_center}, ID {next_p_id}")
                     sync_total_fees_batch(sh, today_date, p_target_center)
                     sync_daily_collection_to_sheet(sh, today_date, p_target_center)
+                    st.session_state['last_receipt'] = {
+                        'ID': next_p_id, 'Date': today_date, 'Center': p_target_center,
+                        'Child Name': c_name, 'Parent Name': p_name, 'Mobile': p_mobile,
+                        'Age': c_age, 'Doctor': p_doctor, 'Fees': int(c_fees), 'Total Charge': int(effective_total_charge),
+                    }
                     st.cache_data.clear()
                     st.success(f"🎯 रिकॉर्ड {p_target_center} सेंटर में सुरक्षित हो गया है!")
                     st.rerun()
@@ -730,6 +872,20 @@ if st.session_state['logged_in']:
                         current_doctor = pat_data['Doctor'] if 'Doctor' in pat_data else None
                         edit_doctor_index = edit_doctor_options.index(current_doctor) if current_doctor in edit_doctor_options else 0
                         edit_p_doctor = st.selectbox("🧑‍⚕️ डॉक्टर बदलें:", edit_doctor_options, index=edit_doctor_index)
+
+                    st.download_button(
+                        "🧾 इस मरीज की रसीद PDF (Reprint)",
+                        data=generate_receipt_pdf({
+                            'ID': patient_options[selected_pat_label], 'Date': str(pat_data['Date']), 'Center': str(pat_data['Center']),
+                            'Child Name': pat_data['Child Name'], 'Parent Name': pat_data['Parent Name'], 'Mobile': pat_data['Mobile'],
+                            'Age': pat_data['Age'], 'Doctor': current_doctor or '', 'Fees': int(pat_data['Fees']) if 'Fees' in pat_data else 0,
+                            'Total Charge': default_total_charge,
+                        }),
+                        file_name=f"Receipt_{patient_options[selected_pat_label]}.pdf",
+                        mime="application/pdf",
+                        key="reprint_receipt_download",
+                    )
+
                     col_upd, col_del = st.columns(2)
                     with col_upd:
                         if st.button("💾 मरीज डेटा अपडेट करें"):
@@ -823,7 +979,14 @@ if st.session_state['logged_in']:
                     
                     st.write("---")
                     cols_to_show = [c for c in ['ID', 'Child Name', 'Parent Name', 'Age', 'Condition', 'Mobile', 'Date', 'Fees', 'Total Fees', 'Center', 'Patient Type'] if c in filtered_df.columns]
-                    if not filtered_df.empty: st.dataframe(filtered_df[cols_to_show].reset_index(drop=True), use_container_width=True)
+                    if not filtered_df.empty:
+                        st.dataframe(filtered_df[cols_to_show].reset_index(drop=True), use_container_width=True)
+                        st.download_button(
+                            label="📄 रिपोर्ट PDF डाउनलोड करें",
+                            data=generate_table_pdf(f"Clinic Report - {admin_view} - {today_date}", filtered_df[cols_to_show].reset_index(drop=True), cols_to_show),
+                            file_name=f'Clinic_Report_{admin_view}_{today_date}.pdf',
+                            mime='application/pdf',
+                        )
                     else: st.info("💡 चयनित क्राइटेरिया के लिए कोई मरीज रिकॉर्ड मौजूद नहीं है।")
                 else: st.info("💡 इस व्यू मोड पर कोई डेटा नहीं मिला।")
             else: st.error("❌ डेटाबेस लोड करने में समस्या आ रही है।")

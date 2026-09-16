@@ -4,3 +4,6 @@ pandas
 google-auth
 openpyxl
 oauth2client
+fpdf2
+pyotp
+qrcode
