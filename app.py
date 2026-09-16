@@ -1622,101 +1622,101 @@ if st.session_state['logged_in']:
                 st.bar_chart(comp_summary.set_index(group_col)["कुल मरीज (Total Patients)"])
 
     elif menu == "🔑 पासवर्ड व क्लिनिक मैनेजर (Password & Clinic Manager)":
-        st.markdown("<h2>🔑 पासवर्ड व सेंटर मैनेजमेंट</h2>", unsafe_allow_html=True)
-        
-        tab_pwd, tab_center, tab_users = st.tabs(["🔐 पासवर्ड मैनेजमेंट", "🏥 सेंटर मैनेजमेंट", "👤 यूज़र मैनेजमेंट (Individual Login)"])
-        
+        st.markdown("<h2>🔑 पासवर्ड व सेंटर मैनेजमेंट (Password & Center Management)</h2>", unsafe_allow_html=True)
+
+        tab_pwd, tab_center, tab_users = st.tabs(["🔐 पासवर्ड मैनेजमेंट (Password)", "🏥 सेंटर मैनेजमेंट (Center)", "👤 यूज़र मैनेजमेंट (Individual Login)"])
+
         pwd_sheet = sh.worksheet("Passwords")
         p_records = pwd_sheet.get_all_records()
-        
+
         with tab_pwd:
-            edit_center = st.selectbox("सेंटर चुनें:", list(PASSWORDS.keys()))
-            new_pwd_input = st.text_input("नया पासवर्ड:", type="password")
-            if st.button("💾 पासवर्ड अपडेट करें"):
+            edit_center = st.selectbox("सेंटर चुनें (Select Center):", list(PASSWORDS.keys()))
+            new_pwd_input = st.text_input("नया पासवर्ड (New Password):", type="password")
+            if st.button("💾 पासवर्ड अपडेट करें (Update Password)"):
                 row_to_update = next((idx + 2 for idx, r in enumerate(p_records) if r['Center'] == edit_center), None)
                 if row_to_update and new_pwd_input.strip():
                     pwd_sheet.update(range_name=f"B{row_to_update}", values=[[hash_password(new_pwd_input.strip())]])
                     log_audit(current_actor(), "Update Password", f"Password changed for {edit_center}")
                     st.cache_data.clear()
-                    st.success("🎉 पासवर्ड अपडेट हो गया!")
+                    st.success("🎉 पासवर्ड अपडेट हो गया! (Password updated!)")
                     st.rerun()
 
             st.markdown("---")
-            st.subheader("🔐 दो-चरणीय सुरक्षा (2FA) — सिर्फ HR_Admin लॉगिन के लिए")
+            st.subheader("🔐 दो-चरणीय सुरक्षा (Two-Factor Authentication - 2FA) — सिर्फ HR_Admin लॉगिन के लिए")
             current_totp_secret = get_totp_secret("HR_Admin")
             if current_totp_secret:
-                st.success("✅ 2FA अभी सक्रिय है — HR_Admin के तौर पर लॉगिन करने के लिए पासवर्ड के बाद Authenticator ऐप का कोड भी माँगा जाएगा।")
+                st.success("✅ 2FA अभी सक्रिय है — HR_Admin के तौर पर लॉगिन करने के लिए पासवर्ड के बाद Authenticator ऐप का कोड भी माँगा जाएगा। (2FA is active — an authenticator code will be required after the password.)")
                 if st.button("🗑️ 2FA बंद करें (Disable 2FA)"):
                     set_totp_secret("HR_Admin", "")
                     log_audit(current_actor(), "Disable 2FA", "HR_Admin")
-                    st.success("2FA बंद कर दिया गया है।")
+                    st.success("2FA बंद कर दिया गया है। (2FA disabled.)")
                     st.rerun()
             else:
-                st.info("2FA अभी सक्रिय नहीं है। नीचे QR कोड को Google Authenticator/Authy ऐप से स्कैन करके सेटअप करें।")
+                st.info("2FA अभी सक्रिय नहीं है। नीचे QR कोड को Google Authenticator/Authy ऐप से स्कैन करके सेटअप करें। (2FA is not active. Scan the QR code below to set it up.)")
                 if 'new_totp_secret' not in st.session_state:
                     st.session_state['new_totp_secret'] = pyotp.random_base32()
                 setup_secret = st.session_state['new_totp_secret']
                 totp_uri = pyotp.TOTP(setup_secret).provisioning_uri(name="HR_Admin", issuer_name="Normal Child Clinic")
                 qr_buf = io.BytesIO()
                 qrcode.make(totp_uri).save(qr_buf, format="PNG")
-                st.image(qr_buf.getvalue(), caption="Authenticator ऐप से स्कैन करें", width=200)
+                st.image(qr_buf.getvalue(), caption="Authenticator ऐप से स्कैन करें (Scan with Authenticator app)", width=200)
                 st.code(setup_secret, language=None)
-                confirm_otp = st.text_input("ऊपर स्कैन करने के बाद ऐप में दिखने वाला 6-अंकों कोड डालें:", key="confirm_totp_setup", max_chars=6)
-                if st.button("✅ 2FA एक्टिवेट करें"):
+                confirm_otp = st.text_input("ऊपर स्कैन करने के बाद ऐप में दिखने वाला 6-अंकों कोड डालें (Enter 6-digit code):", key="confirm_totp_setup", max_chars=6)
+                if st.button("✅ 2FA एक्टिवेट करें (Activate 2FA)"):
                     if confirm_otp and pyotp.TOTP(setup_secret).verify(confirm_otp, valid_window=1):
                         set_totp_secret("HR_Admin", setup_secret)
                         del st.session_state['new_totp_secret']
                         log_audit(current_actor(), "Enable 2FA", "HR_Admin")
-                        st.success("🎉 2FA सफलतापूर्वक एक्टिवेट हो गया है!")
+                        st.success("🎉 2FA सफलतापूर्वक एक्टिवेट हो गया है! (2FA activated!)")
                         st.rerun()
                     else:
-                        st.error("❌ गलत कोड, दोबारा कोशिश करें।")
+                        st.error("❌ गलत कोड, दोबारा कोशिश करें। (Invalid code, try again.)")
 
         with tab_center:
-            st.subheader("➕ नया सेंटर जोड़ें")
-            new_center_name = st.text_input("नये सेंटर का नाम:")
-            new_center_pwd = st.text_input("नये सेंटर का पासवर्ड:", type="password")
-            if st.button("🚀 नया सेंटर जोड़ें"):
+            st.subheader("➕ नया सेंटर जोड़ें (Add New Center)")
+            new_center_name = st.text_input("नये सेंटर का नाम (New Center Name):")
+            new_center_pwd = st.text_input("नये सेंटर का पासवर्ड (New Center Password):", type="password")
+            if st.button("🚀 नया सेंटर जोड़ें (Add Center)"):
                 if new_center_name and new_center_pwd:
                     pwd_sheet.append_row([new_center_name, hash_password(new_center_pwd)])
                     log_audit(current_actor(), "Add Center", f"Center '{new_center_name}' added")
                     st.cache_data.clear()
-                    st.success(f"🎉 सेंटर '{new_center_name}' सफलतापूर्वक जुड़ गया!")
+                    st.success(f"🎉 सेंटर '{new_center_name}' सफलतापूर्वक जुड़ गया! (Center added!)")
                     st.rerun()
-            
+
             st.markdown("---")
-            st.subheader("🗑️ सेंटर हटाएं")
-            del_center = st.selectbox("हटाने के लिए सेंटर चुनें:", actual_centers)
-            if st.button("❌ सेंटर डिलीट करें"):
+            st.subheader("🗑️ सेंटर हटाएं (Delete Center)")
+            del_center = st.selectbox("हटाने के लिए सेंटर चुनें (Select Center to Delete):", actual_centers)
+            if st.button("❌ सेंटर डिलीट करें (Delete Center)"):
                 staff_check_df = load_cloud_data_fast("Staff")
                 patients_check_df = load_cloud_data_fast("Patients")
                 staff_count = len(staff_check_df[staff_check_df['Center'] == del_center]) if not staff_check_df.empty and 'Center' in staff_check_df.columns else 0
                 patient_count = len(patients_check_df[patients_check_df['Center'] == del_center]) if not patients_check_df.empty and 'Center' in patients_check_df.columns else 0
                 if staff_count > 0 or patient_count > 0:
-                    st.error(f"⚠️ '{del_center}' सेंटर डिलीट नहीं किया जा सकता — इसमें अभी भी {staff_count} स्टाफ और {patient_count} मरीज रिकॉर्ड मौजूद हैं। पहले उन्हें किसी दूसरे सेंटर में ट्रांसफर करें।")
+                    st.error(f"⚠️ '{del_center}' सेंटर डिलीट नहीं किया जा सकता — इसमें अभी भी {staff_count} स्टाफ और {patient_count} मरीज रिकॉर्ड मौजूद हैं। पहले उन्हें किसी दूसरे सेंटर में ट्रांसफर करें। (Cannot delete — {staff_count} staff and {patient_count} patient records still linked to this center.)")
                 else:
                     row_idx = next((idx + 2 for idx, r in enumerate(p_records) if r['Center'] == del_center), None)
                     if row_idx:
                         pwd_sheet.delete_rows(row_idx)
                         log_audit(current_actor(), "Delete Center", f"Center '{del_center}' deleted")
                         st.cache_data.clear()
-                        st.success(f"🗑️ सेंटर '{del_center}' हटा दिया गया है!")
+                        st.success(f"🗑️ सेंटर '{del_center}' हटा दिया गया है! (Center deleted!)")
                         st.rerun()
 
         with tab_users:
-            st.caption("यहाँ से हर स्टाफ सदस्य के लिए अलग यूज़रनेम/पासवर्ड बनाएं ताकि वो सेंटर पासवर्ड के बजाय अपनी खुद की लॉगिन (सिर्फ उनके रोल जितनी एक्सेस के साथ) इस्तेमाल कर सके।")
+            st.caption("यहाँ से हर स्टाफ सदस्य के लिए अलग यूज़रनेम/पासवर्ड बनाएं ताकि वो सेंटर पासवर्ड के बजाय अपनी खुद की लॉगिन (सिर्फ उनके रोल जितनी एक्सेस के साथ) इस्तेमाल कर सके। (Create a separate username/password for each staff member for individual, role-limited login.)")
             user_role_options = ["Homeopathic Doctor", "Pharmacist (Medicine Maker)", "Receptionist", "Maid / Housekeeping"]
             col_u1, col_u2 = st.columns(2)
             with col_u1:
-                new_username = st.text_input("यूज़रनेम:", key="new_username")
-                new_user_fullname = st.text_input("पूरा नाम:", key="new_user_fullname")
-                new_user_role = st.selectbox("रोल:", user_role_options, key="new_user_role")
+                new_username = st.text_input("यूज़रनेम (Username):", key="new_username")
+                new_user_fullname = st.text_input("पूरा नाम (Full Name):", key="new_user_fullname")
+                new_user_role = st.selectbox("रोल (Role):", user_role_options, key="new_user_role")
             with col_u2:
-                new_user_center = st.selectbox("सेंटर:", actual_centers, key="new_user_center")
-                new_user_password = st.text_input("पासवर्ड:", type="password", key="new_user_password")
-            if st.button("🚀 यूज़र बनाएं"):
+                new_user_center = st.selectbox("सेंटर (Center):", actual_centers, key="new_user_center")
+                new_user_password = st.text_input("पासवर्ड (Password):", type="password", key="new_user_password")
+            if st.button("🚀 यूज़र बनाएं (Create User)"):
                 if not new_username or not new_user_fullname or not new_user_password:
-                    st.warning("⚠️ कृपया सभी फ़ील्ड भरें।")
+                    st.warning("⚠️ कृपया सभी फ़ील्ड भरें। (Please fill all fields.)")
                 else:
                     try:
                         users_sheet = sh.worksheet("Users")
@@ -1725,27 +1725,27 @@ if st.session_state['logged_in']:
                         users_sheet.update(range_name="A1:F1", values=[["ID", "Username", "Full Name", "Role", "Center", "PasswordHash"]])
                     all_user_rows = users_sheet.get_all_values()
                     if any(str(r[1]).strip().lower() == new_username.strip().lower() for r in all_user_rows[1:] if len(r) > 1):
-                        st.error("❌ यह यूज़रनेम पहले से मौजूद है, कोई दूसरा चुनें।")
+                        st.error("❌ यह यूज़रनेम पहले से मौजूद है, कोई दूसरा चुनें। (Username already exists, choose another.)")
                     else:
                         existing_user_ids = [int(r[0]) for r in all_user_rows[1:] if r and str(r[0]).strip().isdigit()]
                         next_user_id = max(existing_user_ids) + 1 if existing_user_ids else 1
                         users_sheet.append_row([next_user_id, new_username.strip(), new_user_fullname, new_user_role, new_user_center, hash_password(new_user_password)])
                         log_audit(current_actor(), "Add User", f"{new_username} ({new_user_role}, {new_user_center})")
                         st.cache_data.clear()
-                        st.success(f"🎉 यूज़र '{new_username}' बन गया है!")
+                        st.success(f"🎉 यूज़र '{new_username}' बन गया है! (User created!)")
                         st.rerun()
 
             st.markdown("---")
-            st.subheader("📋 मौजूदा यूज़र्स")
+            st.subheader("📋 मौजूदा यूज़र्स (Existing Users)")
             users_df = load_cloud_data_fast("Users")
             if users_df.empty:
-                st.info("अभी कोई इंडिविजुअल यूज़र नहीं बना है।")
+                st.info("अभी कोई इंडिविजुअल यूज़र नहीं बना है। (No individual users created yet.)")
             else:
                 st.dataframe(users_df[['ID', 'Username', 'Full Name', 'Role', 'Center']].reset_index(drop=True), use_container_width=True)
-                st.subheader("🗑️ यूज़र हटाएं")
+                st.subheader("🗑️ यूज़र हटाएं (Delete User)")
                 del_user_options = {f"{r['Username']} - {r['Full Name']} ({r['Center']})": r['ID'] for _, r in users_df.iterrows()}
-                del_user_label = st.selectbox("हटाने के लिए यूज़र चुनें:", list(del_user_options.keys()), key="del_user_select")
-                if st.button("❌ यूज़र डिलीट करें"):
+                del_user_label = st.selectbox("हटाने के लिए यूज़र चुनें (Select User to Delete):", list(del_user_options.keys()), key="del_user_select")
+                if st.button("❌ यूज़र डिलीट करें (Delete User)"):
                     users_sheet = sh.worksheet("Users")
                     all_user_rows = users_sheet.get_all_values()
                     target_user_id = str(del_user_options[del_user_label])
@@ -1754,7 +1754,7 @@ if st.session_state['logged_in']:
                         users_sheet.delete_rows(row_to_delete)
                         log_audit(current_actor(), "Delete User", del_user_label)
                         st.cache_data.clear()
-                        st.success("🗑️ यूज़र डिलीट हो गया है!")
+                        st.success("🗑️ यूज़र डिलीट हो गया है! (User deleted!)")
                         st.rerun()
 
     elif menu == "💰 फाइनेंस (Finance)":
