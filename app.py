@@ -100,6 +100,11 @@ if sh is None:
     st.stop()
 
 # --- 🔒 क्लाउड डेटा लोडर ---
+# नई कॉलम फीचर्स जोड़ने पर Google Sheet की हेडर रो मैन्युअली बदले बिना भी डेटा सही पढ़ने के लिए
+EXPECTED_HEADERS = {
+    "Patients": ["ID", "Child Name", "Parent Name", "Age", "Condition", "Mobile", "Center", "Date", "Fees", "Total Fees", "Patient Type", "Doctor", "Total Charge"],
+}
+
 @st.cache_data(ttl=20)
 def load_cloud_data_fast(sheet_name):
     try:
@@ -107,18 +112,31 @@ def load_cloud_data_fast(sheet_name):
         all_rows = worksheet.get_all_values()
         if not all_rows or len(all_rows) < 1:
             return pd.DataFrame()
-        
+
         headers = [str(h).strip() for h in all_rows[0]]
-        df = pd.DataFrame(all_rows[1:], columns=headers)
-        
+        for expected_col in EXPECTED_HEADERS.get(sheet_name, []):
+            if expected_col not in headers:
+                headers.append(expected_col)
+
+        data_rows = []
+        for r in all_rows[1:]:
+            r = list(r)
+            if len(r) < len(headers):
+                r = r + [""] * (len(headers) - len(r))
+            elif len(r) > len(headers):
+                r = r[:len(headers)]
+            data_rows.append(r)
+
+        df = pd.DataFrame(data_rows, columns=headers)
+
         # --- ऑटोमैटिक हेडर फिक्स ---
         if sheet_name == "Attendance":
             if "Staff ID" in df.columns:
                 df = df.rename(columns={"Staff ID": "Staff_ID"})
-        
+
         if df.empty:
             return df
-            
+
         if sheet_name == "Patients":
             if 'Fees' in df.columns:
                 df['Fees'] = df['Fees'].astype(str).str.replace('₹', '', regex=False).str.replace('/-', '', regex=False).str.replace(',', '', regex=False).str.strip()
@@ -126,6 +144,9 @@ def load_cloud_data_fast(sheet_name):
             if 'Total Fees' in df.columns:
                 df['Total Fees'] = df['Total Fees'].astype(str).str.replace('₹', '', regex=False).str.replace('/-', '', regex=False).str.replace(',', '', regex=False).str.strip()
                 df['Total Fees'] = pd.to_numeric(df['Total Fees'], errors='coerce').fillna(0).astype(int)
+            if 'Total Charge' in df.columns:
+                df['Total Charge'] = df['Total Charge'].astype(str).str.replace('₹', '', regex=False).str.replace('/-', '', regex=False).str.replace(',', '', regex=False).str.strip()
+                df['Total Charge'] = pd.to_numeric(df['Total Charge'], errors='coerce').fillna(0).astype(int)
         return df
     except Exception as e:
         logger.warning(f"load_cloud_data_fast('{sheet_name}') failed: {e}")
@@ -623,6 +644,7 @@ if st.session_state['logged_in']:
         st.markdown("<h2>🧒 मरीज डिजिटल एंट्री व संशोधन</h2>", unsafe_allow_html=True)
         tab_p1, tab_p2 = st.tabs(["🧒 नया मरीज रजिस्ट्रेशन", "✏️ मरीज विवरण एडिट करें"])
         patients_df = load_cloud_data_fast("Patients")
+        staff_df_for_doctor = load_cloud_data_fast("Staff")
         if admin_view == "सभी सेंटर्स (All Centers)":
             center_patients = patients_df if not patients_df.empty else pd.DataFrame()
         else:
@@ -642,6 +664,11 @@ if st.session_state['logged_in']:
                 c_age = st.number_input("🎂 उम्र:", min_value=1, max_value=18, value=6)
                 c_cond = st.selectbox("🩺 मुख्य समस्या:", ["Autism (ऑटिज़्म)", "ADHD", "Cerebral Palsy", "Delayed Speech", "Other"])
                 c_fees = st.number_input("💵 प्राप्त फीस राशि (₹):", min_value=0, value=0, step=100)
+                c_total_charge = st.number_input("🧾 कुल इलाज शुल्क (Total Charge) ₹:", min_value=0, value=0, step=100, help="अगर फीस पूरी नहीं मिली तो यहाँ पूरा शुल्क डालें, बाकी राशि 'बकाया फीस' रिपोर्ट में दिखेगी।")
+                doctor_options = staff_df_for_doctor[(staff_df_for_doctor['Center'] == p_target_center) & (staff_df_for_doctor['Role'] == 'Homeopathic Doctor')]['Name'].tolist() if not staff_df_for_doctor.empty else []
+                if not doctor_options:
+                    doctor_options = ["N/A (कोई डॉक्टर पंजीकृत नहीं)"]
+                p_doctor = st.selectbox("🧑‍⚕️ डॉक्टर चुनें:", doctor_options)
             if st.button("🎯 मरीज रिकॉर्ड सुरक्षित करें"):
                 if not c_name or not p_name or not p_mobile:
                     st.warning("⚠️ कृपया बच्चे का नाम, अभिभावक का नाम और मोबाइल नंबर भरें।")
@@ -652,7 +679,8 @@ if st.session_state['logged_in']:
                     all_p_rows = p_sheet.get_all_values()
                     existing_p_ids = [int(r[0]) for r in all_p_rows[1:] if r and str(r[0]).strip().isdigit()]
                     next_p_id = max(existing_p_ids) + 1 if existing_p_ids else 1
-                    p_sheet.append_row([next_p_id, c_name, p_name, int(c_age), c_cond, str(p_mobile), p_target_center, today_date, int(c_fees), "", p_type])
+                    effective_total_charge = c_total_charge if c_total_charge > 0 else c_fees
+                    p_sheet.append_row([next_p_id, c_name, p_name, int(c_age), c_cond, str(p_mobile), p_target_center, today_date, int(c_fees), "", p_type, p_doctor, int(effective_total_charge)])
                     log_audit(selected_center, "Add Patient", f"{c_name} s/o {p_name} added to {p_target_center}, ID {next_p_id}")
                     sync_total_fees_batch(sh, today_date, p_target_center)
                     sync_daily_collection_to_sheet(sh, today_date, p_target_center)
@@ -691,6 +719,14 @@ if st.session_state['logged_in']:
                         current_cond = pat_data['Condition'] if 'Condition' in pat_data else None
                         edit_c_cond = st.selectbox("समस्या बदलें:", cond_options, index=cond_options.index(current_cond) if current_cond in cond_options else 0)
                         edit_c_fees = st.number_input("फीस राशि बदलें (₹):", min_value=0, value=int(pat_data['Fees']) if 'Fees' in pat_data else 0, step=100)
+                        default_total_charge = int(pat_data['Total Charge']) if 'Total Charge' in pat_data and str(pat_data['Total Charge']).strip() not in ("", "0") else int(pat_data['Fees']) if 'Fees' in pat_data else 0
+                        edit_c_total_charge = st.number_input("🧾 कुल इलाज शुल्क बदलें (₹):", min_value=0, value=default_total_charge, step=100)
+                        edit_doctor_options = staff_df_for_doctor[(staff_df_for_doctor['Center'] == str(pat_data['Center'])) & (staff_df_for_doctor['Role'] == 'Homeopathic Doctor')]['Name'].tolist() if not staff_df_for_doctor.empty else []
+                        if not edit_doctor_options:
+                            edit_doctor_options = ["N/A (कोई डॉक्टर पंजीकृत नहीं)"]
+                        current_doctor = pat_data['Doctor'] if 'Doctor' in pat_data else None
+                        edit_doctor_index = edit_doctor_options.index(current_doctor) if current_doctor in edit_doctor_options else 0
+                        edit_p_doctor = st.selectbox("🧑‍⚕️ डॉक्टर बदलें:", edit_doctor_options, index=edit_doctor_index)
                     col_upd, col_del = st.columns(2)
                     with col_upd:
                         if st.button("💾 मरीज डेटा अपडेट करें"):
@@ -699,7 +735,7 @@ if st.session_state['logged_in']:
                             else:
                                 p_sheet = sh.worksheet("Patients")
                                 p_orig_center = str(pat_data['Center'])
-                                p_sheet.update(range_name=f"A{real_p_row_idx}:K{real_p_row_idx}", values=[[int(patient_options[selected_pat_label]), edit_c_name, edit_p_name, int(edit_c_age), edit_c_cond, str(edit_p_mobile), p_orig_center, str(pat_data['Date']), int(edit_c_fees), "", edit_p_type]])
+                                p_sheet.update(range_name=f"A{real_p_row_idx}:M{real_p_row_idx}", values=[[int(patient_options[selected_pat_label]), edit_c_name, edit_p_name, int(edit_c_age), edit_c_cond, str(edit_p_mobile), p_orig_center, str(pat_data['Date']), int(edit_c_fees), "", edit_p_type, edit_p_doctor, int(edit_c_total_charge)]])
                                 target_date = str(pat_data['Date'])
                                 log_audit(selected_center, "Edit Patient", f"ID {patient_options[selected_pat_label]} ({edit_c_name}) updated")
                                 sync_total_fees_batch(sh, target_date, p_orig_center)
@@ -718,7 +754,10 @@ if st.session_state['logged_in']:
 
     elif menu == "📊 रिपोर्ट सेंटर (Advanced Reports)":
         st.markdown("<h2>📊 क्लिनिक एडवांस्ड रिपोर्ट पैनल</h2>", unsafe_allow_html=True)
-        tab_report1, tab_report2 = st.tabs(["🧒 मरीज एवं कलेक्शन रिपोर्ट", "👥 स्टाफ मासिक अटेंडेंस रिपोर्ट"])
+        tab_report1, tab_report2, tab_report3, tab_report4, tab_report5, tab_report6 = st.tabs([
+            "🧒 मरीज एवं कलेक्शन रिपोर्ट", "👥 स्टाफ मासिक अटेंडेंस रिपोर्ट", "🧑‍⚕️ डॉक्टर परफॉर्मेंस",
+            "⏳ बकाया फीस", "📉 फॉलो-अप ट्रैकर", "📅 वार्षिक/त्रैमासिक तुलना"
+        ])
         with tab_report1:
             patients_df = load_cloud_data_fast("Patients")
             if not patients_df.empty:
@@ -812,6 +851,108 @@ if st.session_state['logged_in']:
                         )
                     
                     st.dataframe(summary_df.reset_index(drop=True), use_container_width=True)
+
+        with tab_report3:
+            st.markdown("### 🧑‍⚕️ डॉक्टर-वार परफॉर्मेंस रिपोर्ट")
+            doc_patients_df = load_cloud_data_fast("Patients")
+            if admin_view == "सभी सेंटर्स (All Centers)":
+                doc_center_df = doc_patients_df
+            else:
+                doc_center_df = doc_patients_df[doc_patients_df['Center'] == admin_view] if not doc_patients_df.empty else pd.DataFrame()
+
+            if doc_center_df.empty or 'Doctor' not in doc_center_df.columns:
+                st.info("💡 अभी तक किसी मरीज एंट्री में डॉक्टर दर्ज नहीं है।")
+            else:
+                doc_period = st.selectbox("📅 अवधि चुनें:", ["इस महीने (This Month)", "शुरू से अब तक (All Time)"], key="doc_perf_period")
+                doc_df = doc_center_df
+                if doc_period == "इस महीने (This Month)":
+                    doc_df = doc_center_df[doc_center_df['Date'].astype(str).str.startswith(today_date[:7])]
+                doc_df = doc_df[doc_df['Doctor'].astype(str).str.strip().str.len() > 0]
+                doc_df = doc_df[~doc_df['Doctor'].astype(str).str.startswith("N/A")]
+                if doc_df.empty:
+                    st.info("💡 चयनित अवधि के लिए कोई डेटा नहीं मिला।")
+                else:
+                    doc_summary = doc_df.groupby('Doctor').agg(**{"कुल मरीज": ('ID', 'count'), "कुल फीस (₹)": ('Fees', 'sum')}).reset_index().sort_values("कुल मरीज", ascending=False)
+                    st.dataframe(doc_summary, use_container_width=True, hide_index=True)
+                    st.bar_chart(doc_summary.set_index('Doctor')["कुल मरीज"])
+
+        with tab_report4:
+            st.markdown("### ⏳ बकाया फीस ट्रैकर (Pending/Due Fees)")
+            due_patients_df = load_cloud_data_fast("Patients")
+            if admin_view == "सभी सेंटर्स (All Centers)":
+                due_center_df = due_patients_df
+            else:
+                due_center_df = due_patients_df[due_patients_df['Center'] == admin_view] if not due_patients_df.empty else pd.DataFrame()
+
+            if due_center_df.empty or 'Total Charge' not in due_center_df.columns:
+                st.info("💡 कोई मरीज डेटा उपलब्ध नहीं है।")
+            else:
+                effective_charge = due_center_df['Total Charge'].where(due_center_df['Total Charge'] > 0, due_center_df['Fees'])
+                due_center_df = due_center_df.assign(**{"बकाया राशि (₹)": (effective_charge - due_center_df['Fees']).clip(lower=0)})
+                due_only_df = due_center_df[due_center_df["बकाया राशि (₹)"] > 0]
+                if due_only_df.empty:
+                    st.success("🎉 सभी मरीजों की फीस पूरी वसूल हो चुकी है, कोई बकाया नहीं है!")
+                else:
+                    st.metric("कुल बकाया राशि", f"₹ {int(due_only_df['बकाया राशि (₹)'].sum())}/-")
+                    cols_due = [c for c in ['ID', 'Child Name', 'Parent Name', 'Mobile', 'Center', 'Date', 'Fees', 'Total Charge', 'बकाया राशि (₹)'] if c in due_only_df.columns]
+                    st.dataframe(due_only_df[cols_due].sort_values("बकाया राशि (₹)", ascending=False).reset_index(drop=True), use_container_width=True)
+
+        with tab_report5:
+            st.markdown("### 📉 फॉलो-अप / ड्रॉपआउट ट्रैकर")
+            st.caption("जो 'पुराने मरीज (Old Patient)' पिछले N दिनों में दोबारा नहीं आए, उनकी सूची।")
+            drop_patients_df = load_cloud_data_fast("Patients")
+            if admin_view == "सभी सेंटर्स (All Centers)":
+                drop_center_df = drop_patients_df
+            else:
+                drop_center_df = drop_patients_df[drop_patients_df['Center'] == admin_view] if not drop_patients_df.empty else pd.DataFrame()
+
+            if drop_center_df.empty or 'Patient Type' not in drop_center_df.columns:
+                st.info("💡 कोई मरीज डेटा उपलब्ध नहीं है।")
+            else:
+                dropout_days = st.slider("कितने दिनों से नहीं आया मरीज मानें (Dropout Threshold):", min_value=7, max_value=90, value=30, step=1)
+                drop_center_df = drop_center_df.copy()
+                drop_center_df['_ParsedDate'] = pd.to_datetime(drop_center_df['Date'], format='%Y-%m-%d', errors='coerce')
+                last_visit = drop_center_df.groupby(['Child Name', 'Parent Name', 'Mobile', 'Center'])['_ParsedDate'].max().reset_index()
+                last_visit['दिन हुए (Days Since Last Visit)'] = (pd.Timestamp(datetime.today().date()) - last_visit['_ParsedDate']).dt.days
+                dropout_list = last_visit[last_visit['दिन हुए (Days Since Last Visit)'] >= dropout_days].sort_values('दिन हुए (Days Since Last Visit)', ascending=False)
+                if dropout_list.empty:
+                    st.success("🎉 फिलहाल कोई मरीज ड्रॉपआउट लिस्ट में नहीं है!")
+                else:
+                    st.warning(f"⚠️ {len(dropout_list)} मरीज पिछले {dropout_days} दिनों से नहीं आए।")
+                    show_cols = ['Child Name', 'Parent Name', 'Mobile', 'Center', 'दिन हुए (Days Since Last Visit)']
+                    st.dataframe(dropout_list[show_cols].reset_index(drop=True), use_container_width=True)
+
+        with tab_report6:
+            st.markdown("### 📅 वार्षिक/त्रैमासिक तुलना (Yearly/Quarterly Comparison)")
+            trend_patients_df = load_cloud_data_fast("Patients")
+            if admin_view == "सभी सेंटर्स (All Centers)":
+                trend_center_df = trend_patients_df
+            else:
+                trend_center_df = trend_patients_df[trend_patients_df['Center'] == admin_view] if not trend_patients_df.empty else pd.DataFrame()
+
+            if trend_center_df.empty:
+                st.info("💡 कोई मरीज डेटा उपलब्ध नहीं है।")
+            else:
+                trend_center_df = trend_center_df.copy()
+                trend_center_df['_ParsedDate'] = pd.to_datetime(trend_center_df['Date'], format='%Y-%m-%d', errors='coerce')
+                trend_center_df = trend_center_df.dropna(subset=['_ParsedDate'])
+                trend_center_df['साल'] = trend_center_df['_ParsedDate'].dt.year
+                trend_center_df['तिमाही'] = "Q" + trend_center_df['_ParsedDate'].dt.quarter.astype(str)
+                trend_center_df['महीना'] = trend_center_df['_ParsedDate'].dt.strftime('%Y-%m')
+
+                comp_mode = st.radio("तुलना मोड चुनें:", ["महीना-वार (Monthly)", "तिमाही-वार (Quarterly)", "साल-वार (Yearly)"], horizontal=True)
+                if comp_mode == "महीना-वार (Monthly)":
+                    group_col = 'महीना'
+                elif comp_mode == "तिमाही-वार (Quarterly)":
+                    trend_center_df['तिमाही'] = trend_center_df['साल'].astype(str) + " " + trend_center_df['तिमाही']
+                    group_col = 'तिमाही'
+                else:
+                    group_col = 'साल'
+
+                comp_summary = trend_center_df.groupby(group_col).agg(**{"कुल मरीज": ('ID', 'count'), "कुल कलेक्शन (₹)": ('Fees', 'sum')}).reset_index().sort_values(group_col)
+                st.dataframe(comp_summary, use_container_width=True, hide_index=True)
+                st.line_chart(comp_summary.set_index(group_col)["कुल कलेक्शन (₹)"])
+                st.bar_chart(comp_summary.set_index(group_col)["कुल मरीज"])
 
     elif menu == "🔑 पासवर्ड व क्लिनिक मैनेजर":
         st.markdown("<h2>🔑 पासवर्ड व सेंटर मैनेजमेंट</h2>", unsafe_allow_html=True)
