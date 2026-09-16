@@ -1790,7 +1790,14 @@ if st.session_state['logged_in']:
     elif menu == "🎫 अपॉइंटमेंट (Appointments)":
         st.markdown("<h2>🎫 अपॉइंटमेंट / टोकन बुकिंग</h2>", unsafe_allow_html=True)
         tab_ap1, tab_ap2 = st.tabs(["➕ नई अपॉइंटमेंट बुक करें", "📋 आज की टोकन क्यू"])
-        time_slots = ["09:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "11:00 AM - 12:00 PM", "12:00 PM - 01:00 PM", "02:00 PM - 03:00 PM", "03:00 PM - 04:00 PM", "04:00 PM - 05:00 PM", "05:00 PM - 06:00 PM"]
+        time_slots = []
+        for hour in range(9, 19):
+            for minute in (0, 30):
+                if hour == 13:
+                    continue  # लंच ब्रेक 1:00-2:00 PM
+                if hour == 18 and minute == 30:
+                    continue  # क्लिनिक 6:00 PM पर बंद
+                time_slots.append(datetime.strptime(f"{hour:02d}:{minute:02d}", "%H:%M").strftime("%I:%M %p").lstrip("0"))
 
         with tab_ap1:
             if st.session_state.get('last_appointment'):
