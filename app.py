@@ -372,7 +372,52 @@ if st.session_state['logged_in']:
         with col1: st.markdown(f'<div class="metric-card"><div class="metric-title">👥 कुल एक्टिव स्टाफ</div><div class="metric-value">{len(center_staff)}</div></div>', unsafe_allow_html=True)
         with col2: st.markdown(f'<div class="metric-card" style="border-top-color:#ff9f43;"><div class="metric-title">🧒 आज के पंजीकृत बच्चे</div><div class="metric-value">{len(filtered_patients)}</div></div>', unsafe_allow_html=True)
         with col3: st.markdown(f'<div class="metric-card" style="border-top-color:#28c76f;"><div class="metric-title">💵 कुल फीस कलेक्शन</div><div class="metric-value" style="color:#28c76f;">₹ {total_fees_collected}/-</div></div>', unsafe_allow_html=True)
-        
+
+        # --- 📊 अतिरिक्त KPI कैलकुलेशन ---
+        attendance_df = load_cloud_data_fast("Attendance")
+        this_month_str = today_date[:7]
+
+        if admin_view == "सभी सेंटर्स (All Centers)":
+            center_patients_all = patients_df if not patients_df.empty else pd.DataFrame()
+        else:
+            center_patients_all = patients_df[patients_df['Center'] == admin_view] if not patients_df.empty else pd.DataFrame()
+
+        month_patients_df = center_patients_all[center_patients_all['Date'].astype(str).str.startswith(this_month_str)] if not center_patients_all.empty else pd.DataFrame()
+        month_collection = month_patients_df['Fees'].sum() if not month_patients_df.empty and 'Fees' in month_patients_df.columns else 0
+
+        att_today = pd.DataFrame()
+        if not attendance_df.empty and 'Date' in attendance_df.columns:
+            att_today = attendance_df[attendance_df['Date'].astype(str).str.strip() == str(today_date)]
+            if admin_view != "सभी सेंटर्स (All Centers)" and 'Center' in att_today.columns:
+                att_today = att_today[att_today['Center'] == admin_view]
+
+        present_count = len(att_today[att_today['Status'] == 'Present']) if not att_today.empty and 'Status' in att_today.columns else 0
+        absent_count = len(att_today[att_today['Status'] == 'Absent']) if not att_today.empty and 'Status' in att_today.columns else 0
+        leave_count = len(att_today[att_today['Status'] == 'Leave']) if not att_today.empty and 'Status' in att_today.columns else 0
+        total_marked = present_count + absent_count + leave_count
+        attendance_pct = round((present_count / total_marked) * 100, 1) if total_marked > 0 else 0
+        avg_fee_today = round(total_fees_collected / len(filtered_patients), 0) if not filtered_patients.empty else 0
+
+        st.write("")
+        col4, col5, col6, col7 = st.columns(4)
+        with col4: st.markdown(f'<div class="metric-card" style="border-top-color:#5f27cd;"><div class="metric-title">📆 इस महीने कलेक्शन</div><div class="metric-value" style="color:#5f27cd;">₹ {int(month_collection)}/-</div></div>', unsafe_allow_html=True)
+        with col5: st.markdown(f'<div class="metric-card" style="border-top-color:#00cec9;"><div class="metric-title">🧒 इस महीने मरीज</div><div class="metric-value">{len(month_patients_df)}</div></div>', unsafe_allow_html=True)
+        with col6: st.markdown(f'<div class="metric-card" style="border-top-color:#0984e3;"><div class="metric-title">✅ आज हाजिरी %</div><div class="metric-value">{attendance_pct}%</div></div>', unsafe_allow_html=True)
+        with col7: st.markdown(f'<div class="metric-card" style="border-top-color:#e17055;"><div class="metric-title">💰 औसत फीस/मरीज (आज)</div><div class="metric-value">₹ {int(avg_fee_today)}</div></div>', unsafe_allow_html=True)
+
+        st.markdown(f"<p style='margin-top:14px;'>👥 <b>आज की हाजिरी:</b> ✅ उपस्थित {present_count} &nbsp;|&nbsp; ❌ अनुपस्थित {absent_count} &nbsp;|&nbsp; 🌴 अवकाश {leave_count}</p>", unsafe_allow_html=True)
+
+        if admin_view == "सभी सेंटर्स (All Centers)" and actual_centers:
+            st.write("---")
+            st.markdown("### 🏥 सेंटर-वाइज तुलना")
+            comparison_rows = []
+            for c in actual_centers:
+                c_staff_count = len(staff_df[staff_df['Center'] == c]) if not staff_df.empty else 0
+                c_today_patients = patients_df[(patients_df['Center'] == c) & (patients_df['Date'] == today_date)] if not patients_df.empty else pd.DataFrame()
+                c_today_fees = c_today_patients['Fees'].sum() if not c_today_patients.empty and 'Fees' in c_today_patients.columns else 0
+                comparison_rows.append({"सेंटर": c, "स्टाफ": c_staff_count, "आज के मरीज": len(c_today_patients), "आज की फीस (₹)": int(c_today_fees)})
+            st.dataframe(pd.DataFrame(comparison_rows), use_container_width=True, hide_index=True)
+
         st.write("---")
         st.markdown(f"### 📋 आज के पंजीकृत मरीज ({today_date})")
         if not filtered_patients.empty:
@@ -381,9 +426,35 @@ if st.session_state['logged_in']:
         else:
             st.info("💡 कोई मरीज दर्ज नहीं है।")
 
+        st.write("---")
+        st.markdown("### 📈 पिछले 7 दिनों का ट्रेंड")
+        last_7_dates = [(datetime.today() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(6, -1, -1)]
+        if not center_patients_all.empty and 'Date' in center_patients_all.columns:
+            trend_source = center_patients_all[center_patients_all['Date'].isin(last_7_dates)]
+            trend_fees = trend_source.groupby('Date')['Fees'].sum().reindex(last_7_dates, fill_value=0) if 'Fees' in trend_source.columns else pd.Series([0] * 7, index=last_7_dates)
+            trend_counts = trend_source.groupby('Date').size().reindex(last_7_dates, fill_value=0)
+        else:
+            trend_fees = pd.Series([0] * 7, index=last_7_dates)
+            trend_counts = pd.Series([0] * 7, index=last_7_dates)
+
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            st.markdown("**💵 दैनिक फीस कलेक्शन**")
+            st.line_chart(trend_fees)
+        with col_t2:
+            st.markdown("**🧒 दैनिक मरीज पंजीकरण**")
+            st.bar_chart(trend_counts)
+
+        if not center_patients_all.empty and 'Condition' in center_patients_all.columns:
+            cond_counts = center_patients_all['Condition'].value_counts().head(6)
+            if not cond_counts.empty:
+                st.write("---")
+                st.markdown("### 🩺 समस्या-वार मरीज वितरण (Top Conditions)")
+                st.bar_chart(cond_counts)
+
     elif menu == "👥 स्टाफ मैनेजमेंट (HR & Staff)":
         st.markdown("<h2>👥 स्टाफ मैनेजमेंट पोर्टल</h2>", unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["➕ नया कर्मचारी जोड़ें", "📋 वर्तमान स्टाफ सूची देखें"])
+        tab1, tab2, tab3 = st.tabs(["➕ नया कर्मचारी जोड़ें", "📋 वर्तमान स्टाफ सूची देखें", "✏️ स्टाफ एडिट करें"])
         staff_df = load_cloud_data_fast("Staff")
         with tab1:
             col_s1, col_s2 = st.columns(2)
@@ -445,6 +516,53 @@ if st.session_state['logged_in']:
                         st.cache_data.clear()
                         st.success("🗑️ स्टाफ रिकॉर्ड डिलीट हो गया है!")
                         st.rerun()
+
+        with tab3:
+            if staff_df.empty:
+                st.info("कोई स्टाफ डेटा उपलब्ध नहीं है।")
+            else:
+                if admin_view == "सभी सेंटर्स (All Centers)":
+                    edit_staff_pool = staff_df
+                else:
+                    edit_staff_pool = staff_df[staff_df['Center'] == admin_view]
+
+                staff_edit_search = st.text_input("🔍 नाम या मोबाइल नंबर से खोजें:", key="staff_edit_search")
+                if staff_edit_search and not edit_staff_pool.empty:
+                    mask = edit_staff_pool['Name'].str.contains(staff_edit_search, case=False, na=False) | edit_staff_pool['Mobile'].str.contains(staff_edit_search, case=False, na=False)
+                    edit_staff_pool = edit_staff_pool[mask]
+
+                if edit_staff_pool.empty:
+                    st.info("💡 खोज से मेल खाता कोई स्टाफ नहीं मिला।")
+                else:
+                    staff_edit_options = {f"{r['Name']} ({r['Role']}, {r['Center']}) - ID {r['ID']}": r['ID'] for _, r in edit_staff_pool.iterrows()}
+                    selected_staff_label = st.selectbox("एडिट के लिए स्टाफ चुनें:", list(staff_edit_options.keys()), key="staff_edit_select")
+                    s_data = staff_df[staff_df['ID'] == staff_edit_options[selected_staff_label]].iloc[0]
+                    real_s_row_idx = staff_df[staff_df['ID'] == staff_edit_options[selected_staff_label]].index[0] + 2
+
+                    role_options = ["Homeopathic Doctor", "Pharmacist (Medicine Maker)", "Receptionist", "Maid / Housekeeping"]
+                    col_se1, col_se2 = st.columns(2)
+                    with col_se1:
+                        edit_s_name = st.text_input("नाम बदलें:", value=str(s_data['Name']))
+                        edit_s_role = st.selectbox("पद बदलें:", role_options, index=role_options.index(s_data['Role']) if s_data['Role'] in role_options else 0)
+                        if selected_center == "HR_Admin":
+                            edit_s_center = st.selectbox("सेंटर बदलें:", actual_centers, index=actual_centers.index(s_data['Center']) if s_data['Center'] in actual_centers else 0)
+                        else:
+                            edit_s_center = str(s_data['Center'])
+                    with col_se2:
+                        edit_s_mobile = st.text_input("मोबाइल नंबर बदलें:", value=str(s_data['Mobile']), max_chars=10)
+                        current_salary = int(s_data['Salary']) if str(s_data['Salary']).strip().isdigit() else 0
+                        edit_s_salary = st.number_input("मासिक सैलरी बदलें (₹):", min_value=0, value=current_salary, step=1000)
+
+                    if st.button("💾 स्टाफ डेटा अपडेट करें"):
+                        if not is_valid_mobile(edit_s_mobile):
+                            st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए।")
+                        else:
+                            s_sheet = sh.worksheet("Staff")
+                            s_sheet.update(range_name=f"A{real_s_row_idx}:F{real_s_row_idx}", values=[[int(staff_edit_options[selected_staff_label]), edit_s_name, edit_s_role, str(edit_s_mobile), edit_s_center, int(edit_s_salary)]])
+                            log_audit(selected_center, "Edit Staff", f"ID {staff_edit_options[selected_staff_label]} ({edit_s_name}) updated")
+                            st.cache_data.clear()
+                            st.success("📝 स्टाफ रिकॉर्ड सफलतापूर्वक अपडेट हो गया!")
+                            st.rerun()
 
     elif menu == "📅 दैनिक हाजिरी (Attendance)":
         st.markdown("<h2>📅 डिजिटल हाजिरी रजिस्टर</h2>", unsafe_allow_html=True)
