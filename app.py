@@ -1758,25 +1758,25 @@ if st.session_state['logged_in']:
                         st.rerun()
 
     elif menu == "💰 फाइनेंस (Finance)":
-        st.markdown("<h2>💰 फाइनेंस मैनेजमेंट</h2>", unsafe_allow_html=True)
-        tab_f1, tab_f2, tab_f3 = st.tabs(["➕ खर्च जोड़ें", "📋 खर्च सूची", "📊 रेवेन्यू vs एक्सपेंस"])
+        st.markdown("<h2>💰 फाइनेंस मैनेजमेंट (Finance Management)</h2>", unsafe_allow_html=True)
+        tab_f1, tab_f2, tab_f3 = st.tabs(["➕ खर्च जोड़ें (Add Expense)", "📋 खर्च सूची (Expense List)", "📊 रेवेन्यू vs एक्सपेंस (Revenue vs Expense)"])
         expense_categories = ["Rent (किराया)", "Salary (सैलरी)", "Medicine Purchase (दवा खरीद)", "Electricity (बिजली)", "Maintenance (रखरखाव)", "Other (अन्य)"]
 
         with tab_f1:
             col_ex1, col_ex2 = st.columns(2)
             with col_ex1:
-                exp_date = st.date_input("📆 तारीख:", datetime.today(), key="exp_date")
+                exp_date = st.date_input("📆 तारीख (Date):", datetime.today(), key="exp_date")
                 if selected_center == "HR_Admin":
-                    exp_center = st.selectbox("🎯 सेंटर चुनें:", actual_centers, key="exp_center")
+                    exp_center = st.selectbox("🎯 सेंटर चुनें (Select Center):", actual_centers, key="exp_center")
                 else:
                     exp_center = selected_center
             with col_ex2:
-                exp_category = st.selectbox("📂 श्रेणी:", expense_categories, key="exp_category")
-                exp_amount = st.number_input("💵 राशि (₹):", min_value=0, value=0, step=100, key="exp_amount")
+                exp_category = st.selectbox("📂 श्रेणी (Category):", expense_categories, key="exp_category")
+                exp_amount = st.number_input("💵 राशि (Amount) (₹):", min_value=0, value=0, step=100, key="exp_amount")
             exp_desc = st.text_input("📝 विवरण (Description):", key="exp_desc")
-            if st.button("💾 खर्च सेव करें"):
+            if st.button("💾 खर्च सेव करें (Save Expense)"):
                 if exp_amount <= 0:
-                    st.warning("⚠️ कृपया राशि 0 से ज्यादा डालें।")
+                    st.warning("⚠️ कृपया राशि 0 से ज्यादा डालें। (Please enter an amount greater than 0.)")
                 else:
                     try:
                         exp_sheet = sh.worksheet("Expenses")
@@ -1789,7 +1789,7 @@ if st.session_state['logged_in']:
                     exp_sheet.append_row([next_exp_id, exp_date.strftime('%Y-%m-%d'), exp_center, exp_category, int(exp_amount), exp_desc])
                     log_audit(current_actor(), "Add Expense", f"{exp_category} - ₹{int(exp_amount)} ({exp_center})")
                     st.cache_data.clear()
-                    st.success("🎉 खर्च सफलतापूर्वक दर्ज हो गया!")
+                    st.success("🎉 खर्च सफलतापूर्वक दर्ज हो गया! (Expense recorded!)")
                     st.rerun()
 
         with tab_f2:
@@ -1800,16 +1800,16 @@ if st.session_state['logged_in']:
                 view_exp_df = expenses_df[expenses_df['Center'] == admin_view] if not expenses_df.empty and 'Center' in expenses_df.columns else pd.DataFrame()
 
             if view_exp_df.empty:
-                st.info("कोई खर्च डेटा उपलब्ध नहीं है।")
+                st.info("कोई खर्च डेटा उपलब्ध नहीं है। (No expense data available.)")
             else:
-                st.metric("कुल खर्च", f"₹ {int(view_exp_df['Amount'].sum())}/-")
+                st.metric("कुल खर्च (Total Expense)", f"₹ {int(view_exp_df['Amount'].sum())}/-")
                 st.dataframe(view_exp_df[['ID', 'Date', 'Center', 'Category', 'Amount', 'Description']].sort_values('Date', ascending=False).reset_index(drop=True), use_container_width=True)
 
                 st.markdown("---")
-                st.subheader("🗑️ खर्च एंट्री हटाएं")
+                st.subheader("🗑️ खर्च एंट्री हटाएं (Delete Expense Entry)")
                 del_exp_options = {f"{r['Date']} - {r['Category']} - ₹{r['Amount']} ({r['Center']})": r['ID'] for _, r in view_exp_df.iterrows()}
-                del_exp_label = st.selectbox("हटाने के लिए एंट्री चुनें:", list(del_exp_options.keys()), key="del_exp_select")
-                if st.button("❌ खर्च डिलीट करें"):
+                del_exp_label = st.selectbox("हटाने के लिए एंट्री चुनें (Select Entry to Delete):", list(del_exp_options.keys()), key="del_exp_select")
+                if st.button("❌ खर्च डिलीट करें (Delete Expense)"):
                     exp_sheet = sh.worksheet("Expenses")
                     all_exp_rows = exp_sheet.get_all_values()
                     target_exp_id = str(del_exp_options[del_exp_label])
@@ -1818,12 +1818,12 @@ if st.session_state['logged_in']:
                         exp_sheet.delete_rows(row_to_delete)
                         log_audit(current_actor(), "Delete Expense", del_exp_label)
                         st.cache_data.clear()
-                        st.success("🗑️ खर्च एंट्री डिलीट हो गई है!")
+                        st.success("🗑️ खर्च एंट्री डिलीट हो गई है! (Expense entry deleted!)")
                         st.rerun()
 
         with tab_f3:
-            st.markdown("### 📊 रेवेन्यू vs एक्सपेंस रिपोर्ट")
-            rev_period = st.selectbox("📅 अवधि चुनें:", ["इस महीने (This Month)", "शुरू से अब तक (All Time)"], key="rev_exp_period")
+            st.markdown("### 📊 रेवेन्यू vs एक्सपेंस रिपोर्ट (Revenue vs Expense Report)")
+            rev_period = st.selectbox("📅 अवधि चुनें (Select Period):", ["इस महीने (This Month)", "शुरू से अब तक (All Time)"], key="rev_exp_period")
             rev_patients_df = load_cloud_data_fast("Patients")
             rev_expenses_df = load_cloud_data_fast("Expenses")
             rev_consultations_df = load_cloud_data_fast("Consultations")
@@ -1847,15 +1847,15 @@ if st.session_state['logged_in']:
             net_profit = total_revenue - total_expense
 
             col_r1, col_r2, col_r3 = st.columns(3)
-            with col_r1: st.metric("💵 कुल रेवेन्यू", f"₹ {int(total_revenue)}/-")
-            with col_r2: st.metric("💸 कुल खर्च", f"₹ {int(total_expense)}/-")
-            with col_r3: st.metric("📈 नेट प्रॉफिट", f"₹ {int(net_profit)}/-")
+            with col_r1: st.metric("💵 कुल रेवेन्यू (Total Revenue)", f"₹ {int(total_revenue)}/-")
+            with col_r2: st.metric("💸 कुल खर्च (Total Expense)", f"₹ {int(total_expense)}/-")
+            with col_r3: st.metric("📈 नेट प्रॉफिट (Net Profit)", f"₹ {int(net_profit)}/-")
 
             if not rev_e_df.empty:
-                st.markdown("##### 📂 श्रेणी-वार खर्च वितरण")
+                st.markdown("##### 📂 श्रेणी-वार खर्च वितरण (Expense by Category)")
                 st.bar_chart(rev_e_df.groupby('Category')['Amount'].sum())
 
-            st.markdown("##### 📈 पिछले 6 महीनों का रेवेन्यू vs एक्सपेंस")
+            st.markdown("##### 📈 पिछले 6 महीनों का रेवेन्यू vs एक्सपेंस (Last 6 Months)")
             months_back = [(datetime.today().replace(day=1) - timedelta(days=30 * i)).strftime('%Y-%m') for i in range(5, -1, -1)]
             all_p_for_trend = rev_patients_df if admin_view == "सभी सेंटर्स (All Centers)" else (rev_patients_df[rev_patients_df['Center'] == admin_view] if not rev_patients_df.empty else pd.DataFrame())
             all_e_for_trend = rev_expenses_df if admin_view == "सभी सेंटर्स (All Centers)" else (rev_expenses_df[rev_expenses_df['Center'] == admin_view] if not rev_expenses_df.empty and 'Center' in rev_expenses_df.columns else pd.DataFrame())
@@ -1865,8 +1865,8 @@ if st.session_state['logged_in']:
                 m_rev = all_p_for_trend[all_p_for_trend['Date'].astype(str).str.startswith(m)]['Fees'].sum() if not all_p_for_trend.empty else 0
                 m_rev += all_c_for_trend[all_c_for_trend['Date'].astype(str).str.startswith(m)]['Total Fees'].sum() if not all_c_for_trend.empty and 'Total Fees' in all_c_for_trend.columns else 0
                 m_exp = all_e_for_trend[all_e_for_trend['Date'].astype(str).str.startswith(m)]['Amount'].sum() if not all_e_for_trend.empty else 0
-                monthly_rows.append({"महीना": m, "रेवेन्यू": int(m_rev), "खर्च": int(m_exp)})
-            monthly_comp_df = pd.DataFrame(monthly_rows).set_index("महीना")
+                monthly_rows.append({"महीना (Month)": m, "रेवेन्यू (Revenue)": int(m_rev), "खर्च (Expense)": int(m_exp)})
+            monthly_comp_df = pd.DataFrame(monthly_rows).set_index("महीना (Month)")
             st.line_chart(monthly_comp_df)
 
     elif menu == "🩺 परामर्श (Consultation)":
