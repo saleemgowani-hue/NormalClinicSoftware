@@ -1200,7 +1200,7 @@ if st.session_state['logged_in']:
             att_center = admin_view
         center_staff = staff_df[staff_df['Center'] == att_center] if not staff_df.empty else pd.DataFrame()
         if center_staff.empty:
-            st.warning(f"⚠️ {att_center} सेंटर पर कोई स्टाफ उपलब्ध नहीं है।")
+            st.warning(f"⚠️ {att_center} सेंटर पर कोई स्टाफ उपलब्ध नहीं है। (No staff available at this center.)")
         else:
             att_today_df = load_cloud_data_fast("Attendance")
             existing_status = {}
@@ -1218,7 +1218,7 @@ if st.session_state['logged_in']:
                 default_index = status_options.index(default_status) if default_status in status_options else 0
                 status = col_a.radio(f"Status for {row['Name']}", status_options, index=default_index, key=str(row['ID']), label_visibility="collapsed", horizontal=True)
                 attendance_dict[row['ID']] = {"name": row['Name'], "status": status}
-            if st.button("💾 अटेंडेंस LOCK और सबमिट करें"):
+            if st.button("💾 अटेंडेंस LOCK और सबमिट करें (Lock & Submit Attendance)"):
                 try:
                     att_sheet = sh.worksheet("Attendance")
                     all_rows = att_sheet.get_all_values()
@@ -1241,14 +1241,14 @@ if st.session_state['logged_in']:
                             all_rows.append([next_id, int(s_id), info['name'], today_date, info['status'], att_center])
                     log_audit(current_actor(), "Submit Attendance", f"{att_center} - {today_date} ({len(attendance_dict)} स्टाफ)")
                     st.cache_data.clear()
-                    st.success(f"✅ {att_center} सेंटर का अटेंडेंस शीट डेटा lock हो गया है!")
+                    st.success(f"✅ {att_center} सेंटर का अटेंडेंस शीट डेटा lock हो गया है! (Attendance locked and saved!)")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"एरर: {e}")
+                    st.error(f"एरर (Error): {e}")
 
     elif menu == "🧒 मरीज रजिस्ट्रेशन (Patient Entry)":
-        st.markdown("<h2>🧒 मरीज डिजिटल एंट्री व संशोधन</h2>", unsafe_allow_html=True)
-        tab_p1, tab_p2, tab_p3 = st.tabs(["🧒 नया मरीज रजिस्ट्रेशन", "✏️ मरीज विवरण एडिट करें", "📜 विज़िट हिस्ट्री"])
+        st.markdown("<h2>🧒 मरीज डिजिटल एंट्री व संशोधन (Patient Entry & Edit)</h2>", unsafe_allow_html=True)
+        tab_p1, tab_p2, tab_p3 = st.tabs(["🧒 नया मरीज रजिस्ट्रेशन (New Patient)", "✏️ मरीज विवरण एडिट करें (Edit Patient)", "📜 विज़िट हिस्ट्री (Visit History)"])
         patients_df = load_cloud_data_fast("Patients")
         staff_df_for_doctor = load_cloud_data_fast("Staff")
         if admin_view == "सभी सेंटर्स (All Centers)":
@@ -1258,9 +1258,9 @@ if st.session_state['logged_in']:
         with tab_p1:
             if st.session_state.get('last_receipt'):
                 last_receipt_data = st.session_state['last_receipt']
-                st.success(f"✅ {last_receipt_data['Child Name']} का रिकॉर्ड सुरक्षित है — रसीद डाउनलोड करें या WhatsApp पर भेजें:")
+                st.success(f"✅ {last_receipt_data['Child Name']} का रिकॉर्ड सुरक्षित है — रसीद डाउनलोड करें या WhatsApp पर भेजें: (Record saved — download receipt or send via WhatsApp:)")
                 st.download_button(
-                    "🧾 पिछली रसीद PDF डाउनलोड करें",
+                    "🧾 पिछली रसीद PDF डाउनलोड करें (Download Last Receipt PDF)",
                     data=generate_receipt_pdf(last_receipt_data),
                     file_name=f"Receipt_{last_receipt_data['ID']}.pdf",
                     mime="application/pdf",
@@ -1270,28 +1270,28 @@ if st.session_state['logged_in']:
                 st.markdown("---")
             col_p1, col_p2 = st.columns(2)
             with col_p1:
-                c_name = st.text_input("🧒 विशेष बच्चे का नाम:")
-                p_name = st.text_input("👨‍👩‍👦 माता या पिता का नाम:")
-                p_mobile = st.text_input("📞 अभिभावक का मोबाइल नंबर:", max_chars=10)
-                p_type = st.selectbox("📋 मरीज का प्रकार:", ["New Patient (नया)", "Old Patient (पुराना)"])
+                c_name = st.text_input("🧒 विशेष बच्चे का नाम (Child's Name):")
+                p_name = st.text_input("👨‍👩‍👦 माता या पिता का नाम (Parent's Name):")
+                p_mobile = st.text_input("📞 अभिभावक का मोबाइल नंबर (Parent's Mobile):", max_chars=10)
+                p_type = st.selectbox("📋 मरीज का प्रकार (Patient Type):", ["New Patient (नया)", "Old Patient (पुराना)"])
                 if selected_center == "HR_Admin":
-                    p_target_center = st.selectbox("🎯 किस सेंटर में मरीज एंट्री डालनी है?:", actual_centers)
+                    p_target_center = st.selectbox("🎯 किस सेंटर में मरीज एंट्री डालनी है? (Select Center):", actual_centers)
                 else:
                     p_target_center = selected_center
             with col_p2:
-                c_age = st.number_input("🎂 उम्र:", min_value=1, max_value=18, value=6)
-                c_cond = st.selectbox("🩺 मुख्य समस्या:", ["Autism (ऑटिज़्म)", "ADHD", "Cerebral Palsy", "Delayed Speech", "Other"])
-                c_fees = st.number_input("💵 प्राप्त फीस राशि (₹):", min_value=0, value=0, step=100)
-                c_total_charge = st.number_input("🧾 कुल इलाज शुल्क (Total Charge) ₹:", min_value=0, value=0, step=100, help="अगर फीस पूरी नहीं मिली तो यहाँ पूरा शुल्क डालें, बाकी राशि 'बकाया फीस' रिपोर्ट में दिखेगी।")
+                c_age = st.number_input("🎂 उम्र (Age):", min_value=1, max_value=18, value=6)
+                c_cond = st.selectbox("🩺 मुख्य समस्या (Chief Complaint):", ["Autism (ऑटिज़्म)", "ADHD", "Cerebral Palsy", "Delayed Speech", "Other"])
+                c_fees = st.number_input("💵 प्राप्त फीस राशि (Fees Received) (₹):", min_value=0, value=0, step=100)
+                c_total_charge = st.number_input("🧾 कुल इलाज शुल्क (Total Charge) ₹:", min_value=0, value=0, step=100, help="अगर फीस पूरी नहीं मिली तो यहाँ पूरा शुल्क डालें, बाकी राशि 'बकाया फीस' रिपोर्ट में दिखेगी। (If full fee wasn't collected, enter the total charge here — the balance will show in the Due Fees report.)")
                 doctor_options = staff_df_for_doctor[(staff_df_for_doctor['Center'] == p_target_center) & (staff_df_for_doctor['Role'] == 'Homeopathic Doctor')]['Name'].tolist() if not staff_df_for_doctor.empty else []
                 if not doctor_options:
                     doctor_options = ["N/A (कोई डॉक्टर पंजीकृत नहीं)"]
-                p_doctor = st.selectbox("🧑‍⚕️ डॉक्टर चुनें:", doctor_options)
-            if st.button("🎯 मरीज रिकॉर्ड सुरक्षित करें"):
+                p_doctor = st.selectbox("🧑‍⚕️ डॉक्टर चुनें (Select Doctor):", doctor_options)
+            if st.button("🎯 मरीज रिकॉर्ड सुरक्षित करें (Save Patient Record)"):
                 if not c_name or not p_name or not p_mobile:
-                    st.warning("⚠️ कृपया बच्चे का नाम, अभिभावक का नाम और मोबाइल नंबर भरें।")
+                    st.warning("⚠️ कृपया बच्चे का नाम, अभिभावक का नाम और मोबाइल नंबर भरें। (Please fill child's name, parent's name, and mobile number.)")
                 elif not is_valid_mobile(p_mobile):
-                    st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए।")
+                    st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए। (Mobile number must be 10 digits.)")
                 else:
                     p_sheet = sh.worksheet("Patients")
                     all_p_rows = p_sheet.get_all_values()
@@ -1308,12 +1308,12 @@ if st.session_state['logged_in']:
                         'Age': c_age, 'Doctor': p_doctor, 'Fees': int(c_fees), 'Total Charge': int(effective_total_charge),
                     }
                     st.cache_data.clear()
-                    st.success(f"🎯 रिकॉर्ड {p_target_center} सेंटर में सुरक्षित हो गया है!")
+                    st.success(f"🎯 रिकॉर्ड {p_target_center} सेंटर में सुरक्षित हो गया है! (Record saved!)")
                     st.rerun()
         with tab_p2:
-            if center_patients.empty: st.info("कोई मरीज डेटा उपलब्ध नहीं है।")
+            if center_patients.empty: st.info("कोई मरीज डेटा उपलब्ध नहीं है। (No patient data available.)")
             else:
-                pat_search = st.text_input("🔍 बच्चे/अभिभावक का नाम या मोबाइल नंबर से खोजें:", key="patient_search")
+                pat_search = st.text_input("🔍 बच्चे/अभिभावक का नाम या मोबाइल नंबर से खोजें (Search by Name/Mobile):", key="patient_search")
                 search_patients = center_patients
                 if pat_search:
                     mask = (
@@ -1324,32 +1324,32 @@ if st.session_state['logged_in']:
                     search_patients = center_patients[mask]
 
                 if search_patients.empty:
-                    st.info("💡 खोज से मेल खाता कोई मरीज नहीं मिला।")
+                    st.info("💡 खोज से मेल खाता कोई मरीज नहीं मिला। (No matching patient found.)")
                 else:
                     patient_options = {f"[{row['Center']}] {row['Child Name']} s/o {row['Parent Name']} (ID: {row['ID']})": row['ID'] for _, row in search_patients.iterrows()}
-                    selected_pat_label = st.selectbox("संशोधन के लिए मरीज चुनें:", list(patient_options.keys()))
+                    selected_pat_label = st.selectbox("संशोधन के लिए मरीज चुनें (Select Patient to Edit):", list(patient_options.keys()))
                     pat_data = center_patients[center_patients['ID'] == patient_options[selected_pat_label]].iloc[0]
                     real_p_row_idx = patients_df[patients_df['ID'] == patient_options[selected_pat_label]].index[0] + 2
                     col_e1, col_e2 = st.columns(2)
                     with col_e1:
-                        edit_c_name = st.text_input("बच्चे का नाम बदलें:", value=str(pat_data['Child Name']))
-                        edit_p_name = st.text_input("अभिभावक का नाम बदलें:", value=str(pat_data['Parent Name']))
-                        edit_p_mobile = st.text_input("मोबाइल नंबर बदलें:", value=str(pat_data['Mobile']), max_chars=10)
-                        edit_p_type = st.selectbox("मरीज का प्रकार बदलें:", ["New Patient (नया)", "Old Patient (पुराना)"], index=0 if 'Patient Type' not in pat_data or pat_data['Patient Type'] == 'New Patient (नया)' else 1)
+                        edit_c_name = st.text_input("बच्चे का नाम बदलें (Change Child's Name):", value=str(pat_data['Child Name']))
+                        edit_p_name = st.text_input("अभिभावक का नाम बदलें (Change Parent's Name):", value=str(pat_data['Parent Name']))
+                        edit_p_mobile = st.text_input("मोबाइल नंबर बदलें (Change Mobile):", value=str(pat_data['Mobile']), max_chars=10)
+                        edit_p_type = st.selectbox("मरीज का प्रकार बदलें (Change Patient Type):", ["New Patient (नया)", "Old Patient (पुराना)"], index=0 if 'Patient Type' not in pat_data or pat_data['Patient Type'] == 'New Patient (नया)' else 1)
                     with col_e2:
-                        edit_c_age = st.number_input("उम्र बदलें:", min_value=1, max_value=18, value=int(pat_data['Age']))
+                        edit_c_age = st.number_input("उम्र बदलें (Change Age):", min_value=1, max_value=18, value=int(pat_data['Age']))
                         cond_options = ["Autism (ऑटिज़्म)", "ADHD", "Cerebral Palsy", "Delayed Speech", "Other"]
                         current_cond = pat_data['Condition'] if 'Condition' in pat_data else None
-                        edit_c_cond = st.selectbox("समस्या बदलें:", cond_options, index=cond_options.index(current_cond) if current_cond in cond_options else 0)
-                        edit_c_fees = st.number_input("फीस राशि बदलें (₹):", min_value=0, value=int(pat_data['Fees']) if 'Fees' in pat_data else 0, step=100)
+                        edit_c_cond = st.selectbox("समस्या बदलें (Change Condition):", cond_options, index=cond_options.index(current_cond) if current_cond in cond_options else 0)
+                        edit_c_fees = st.number_input("फीस राशि बदलें (Change Fees) (₹):", min_value=0, value=int(pat_data['Fees']) if 'Fees' in pat_data else 0, step=100)
                         default_total_charge = int(pat_data['Total Charge']) if 'Total Charge' in pat_data and str(pat_data['Total Charge']).strip() not in ("", "0") else int(pat_data['Fees']) if 'Fees' in pat_data else 0
-                        edit_c_total_charge = st.number_input("🧾 कुल इलाज शुल्क बदलें (₹):", min_value=0, value=default_total_charge, step=100)
+                        edit_c_total_charge = st.number_input("🧾 कुल इलाज शुल्क बदलें (Change Total Charge) (₹):", min_value=0, value=default_total_charge, step=100)
                         edit_doctor_options = staff_df_for_doctor[(staff_df_for_doctor['Center'] == str(pat_data['Center'])) & (staff_df_for_doctor['Role'] == 'Homeopathic Doctor')]['Name'].tolist() if not staff_df_for_doctor.empty else []
                         if not edit_doctor_options:
                             edit_doctor_options = ["N/A (कोई डॉक्टर पंजीकृत नहीं)"]
                         current_doctor = pat_data['Doctor'] if 'Doctor' in pat_data else None
                         edit_doctor_index = edit_doctor_options.index(current_doctor) if current_doctor in edit_doctor_options else 0
-                        edit_p_doctor = st.selectbox("🧑‍⚕️ डॉक्टर बदलें:", edit_doctor_options, index=edit_doctor_index)
+                        edit_p_doctor = st.selectbox("🧑‍⚕️ डॉक्टर बदलें (Change Doctor):", edit_doctor_options, index=edit_doctor_index)
 
                     selected_patient_data = {
                         'ID': patient_options[selected_pat_label], 'Date': str(pat_data['Date']), 'Center': str(pat_data['Center']),
@@ -1368,9 +1368,9 @@ if st.session_state['logged_in']:
 
                     col_upd, col_del = st.columns(2)
                     with col_upd:
-                        if st.button("💾 मरीज डेटा अपडेट करें"):
+                        if st.button("💾 मरीज डेटा अपडेट करें (Update Patient)"):
                             if not is_valid_mobile(edit_p_mobile):
-                                st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए।")
+                                st.warning("⚠️ मोबाइल नंबर 10 अंकों का होना चाहिए। (Mobile number must be 10 digits.)")
                             else:
                                 p_sheet = sh.worksheet("Patients")
                                 p_orig_center = str(pat_data['Center'])
@@ -1380,24 +1380,24 @@ if st.session_state['logged_in']:
                                 sync_total_fees_batch(sh, target_date, p_orig_center)
                                 sync_daily_collection_to_sheet(sh, target_date, p_orig_center)
                                 st.cache_data.clear()
-                                st.success("📝 रिकॉर्ड सफलतापूर्वक बैच मोड में अपडेटेड!")
+                                st.success("📝 रिकॉर्ड सफलतापूर्वक बैच मोड में अपडेटेड! (Record updated!)")
                                 st.rerun()
                     with col_del:
-                        if st.button("🗑️ मरीज रिकॉर्ड डिलीट करें"):
+                        if st.button("🗑️ मरीज रिकॉर्ड डिलीट करें (Delete Patient)"):
                             p_sheet = sh.worksheet("Patients")
                             p_sheet.delete_rows(real_p_row_idx)
                             log_audit(current_actor(), "Delete Patient", f"ID {patient_options[selected_pat_label]} ({pat_data['Child Name']}) deleted")
                             st.cache_data.clear()
-                            st.success("🗑️ मरीज रिकॉर्ड डिलीट हो गया है!")
+                            st.success("🗑️ मरीज रिकॉर्ड डिलीट हो गया है! (Patient record deleted!)")
                             st.rerun()
 
         with tab_p3:
-            st.markdown("#### 📜 किसी भी मरीज की पूरी विज़िट हिस्ट्री देखें")
-            hist_search = st.text_input("🔍 मोबाइल नंबर या बच्चे का नाम डालें:", key="history_search")
+            st.markdown("#### 📜 किसी भी मरीज की पूरी विज़िट हिस्ट्री देखें (View Full Visit History)")
+            hist_search = st.text_input("🔍 मोबाइल नंबर या बच्चे का नाम डालें (Enter Mobile/Name):", key="history_search")
             if not hist_search:
-                st.info("💡 खोजने के लिए ऊपर मोबाइल नंबर या नाम टाइप करें।")
+                st.info("💡 खोजने के लिए ऊपर मोबाइल नंबर या नाम टाइप करें। (Type mobile number or name above to search.)")
             elif center_patients.empty:
-                st.info("कोई मरीज डेटा उपलब्ध नहीं है।")
+                st.info("कोई मरीज डेटा उपलब्ध नहीं है। (No patient data available.)")
             else:
                 hist_mask = (
                     center_patients['Mobile'].str.contains(hist_search, case=False, na=False)
@@ -1405,10 +1405,10 @@ if st.session_state['logged_in']:
                 )
                 hist_matches = center_patients[hist_mask]
                 if hist_matches.empty:
-                    st.info("💡 खोज से मेल खाता कोई मरीज नहीं मिला।")
+                    st.info("💡 खोज से मेल खाता कोई मरीज नहीं मिला। (No matching patient found.)")
                 else:
                     hist_sorted = hist_matches.sort_values('Date', ascending=False)
-                    st.markdown(f"**कुल विज़िट: {len(hist_sorted)}**")
+                    st.markdown(f"**कुल विज़िट (Total Visits): {len(hist_sorted)}**")
                     hist_cols = [c for c in ['Date', 'Child Name', 'Parent Name', 'Age', 'Condition', 'Doctor', 'Fees', 'Total Charge', 'Patient Type', 'Center'] if c in hist_sorted.columns]
                     st.dataframe(hist_sorted[hist_cols].reset_index(drop=True), use_container_width=True)
 
